@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "leads" ALTER COLUMN "company" DROP NOT NULL;

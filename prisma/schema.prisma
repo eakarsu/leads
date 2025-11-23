@@ -1,0 +1,271 @@
+// This is your Prisma schema file for LeadGenFlow AI
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  ACCOUNT_MANAGER
+  CAMPAIGN_SPECIALIST
+  CLIENT
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum CampaignChannel {
+  EMAIL
+  LINKEDIN
+  COLD_CALL
+  PAID_ADS
+  MULTI_CHANNEL
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  UNQUALIFIED
+  WON
+  LOST
+}
+
+enum ActivityType {
+  EMAIL
+  CALL
+  LINKEDIN
+  MEETING
+  NOTE
+}
+
+enum BusinessSector {
+  HOME_SERVICES
+  LEGAL_SERVICES
+  FINANCIAL_SERVICES
+  REAL_ESTATE
+  HEALTHCARE
+  B2B_SAAS
+  EDUCATION
+  AUTOMOTIVE
+  GENERAL
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  hashedPassword String
+  name           String
+  role           UserRole @default(CLIENT)
+  clientId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  client          ClientCompany?    @relation(fields: [clientId], references: [id])
+  ownedCampaigns  Campaign[]
+  activities      LeadActivity[]
+  createdThreads  MessageThread[]
+  sentMessages    Message[]
+  submittedLeads  Lead[]
+
+  @@index([clientId])
+  @@map("users")
+}
+
+model ClientCompany {
+  id             String         @id @default(uuid())
+  name           String
+  industry       String
+  businessSector BusinessSector @default(GENERAL)
+  website        String?
+  contactName    String
+  contactEmail   String
+  contactPhone   String?
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  // Relations
+  users          User[]
+  campaigns      Campaign[]
+  leads          Lead[]
+  reports        ReportSnapshot[]
+  messageThreads MessageThread[]
+
+  @@map("client_companies")
+}
+
+model Campaign {
+  id            String          @id @default(uuid())
+  clientId      String
+  name          String
+  description   String?         @db.Text
+  status        CampaignStatus  @default(DRAFT)
+  channel       CampaignChannel
+  targetPersona String?         @db.Text
+  targetRegions String?
+  startDate     DateTime?
+  endDate       DateTime?
+  ownerId       String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  client  ClientCompany    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  owner   User             @relation(fields: [ownerId], references: [id])
+  leads   Lead[]
+  reports ReportSnapshot[]
+
+  @@index([clientId])
+  @@index([ownerId])
+  @@index([status])
+  @@map("campaigns")
+}
+
+enum LeadSource {
+  AGENCY
+  CLIENT_SUBMITTED
+  IMPORTED
+  API
+  MANUAL
+}
+
+model Lead {
+  id                 String     @id @default(uuid())
+  campaignId         String?
+  clientId           String
+  fullName           String
+  company            String?
+  title              String?
+  email              String?
+  phone              String?
+  linkedinUrl        String?
+  website            String?
+  source             String?
+  leadSource         LeadSource @default(AGENCY)
+  submittedBy        String?
+  status             LeadStatus @default(NEW)
+  qualificationScore Int        @default(0)
+  notes              String?    @db.Text
+  customFields       Json?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  campaign        Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  client          ClientCompany     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  submitter       User?             @relation(fields: [submittedBy], references: [id])
+  activities      LeadActivity[]
+  enrichmentData  EnrichmentData[]
+
+  @@index([campaignId])
+  @@index([clientId])
+  @@index([status])
+  @@index([qualificationScore])
+  @@index([leadSource])
+  @@map("leads")
+}
+
+model LeadActivity {
+  id        String       @id @default(uuid())
+  leadId    String
+  type      ActivityType
+  timestamp DateTime     @default(now())
+  userId    String
+  content   String       @db.Text
+  aiSummary String?      @db.Text
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  // Relations
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([leadId])
+  @@index([userId])
+  @@index([type])
+  @@map("lead_activities")
+}
+
+model EnrichmentData {
+  id          String   @id @default(uuid())
+  leadId      String
+  companySize String?
+  industry    String?
+  techStack   String?
+  location    String?
+  extra       Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@map("enrichment_data")
+}
+
+model ReportSnapshot {
+  id          String   @id @default(uuid())
+  clientId    String
+  campaignId  String?
+  periodStart DateTime
+  periodEnd   DateTime
+  metrics     Json
+  aiSummary   String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client   ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaign Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([campaignId])
+  @@map("report_snapshots")
+}
+
+model MessageThread {
+  id              String   @id @default(uuid())
+  clientId        String
+  subject         String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  client    ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy User          @relation(fields: [createdByUserId], references: [id])
+  messages  Message[]
+
+  @@index([clientId])
+  @@index([createdByUserId])
+  @@map("message_threads")
+}
+
+model Message {
+  id           String    @id @default(uuid())
+  threadId     String
+  senderUserId String
+  content      String    @db.Text
+  sentAt       DateTime  @default(now())
+  readAt       DateTime?
+
+  // Relations
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [senderUserId], references: [id])
+
+  @@index([threadId])
+  @@index([senderUserId])
+  @@map("messages")
+}

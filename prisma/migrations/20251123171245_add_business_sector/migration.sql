@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "BusinessSector" AS ENUM ('HOME_SERVICES', 'LEGAL_SERVICES', 'FINANCIAL_SERVICES', 'REAL_ESTATE', 'HEALTHCARE', 'B2B_SAAS', 'EDUCATION', 'AUTOMOTIVE', 'GENERAL');
+
+-- AlterTable
+ALTER TABLE "client_companies" ADD COLUMN     "businessSector" "BusinessSector" NOT NULL DEFAULT 'GENERAL';
