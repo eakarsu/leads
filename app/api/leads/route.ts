@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
     const leadSource = searchParams.get('leadSource');
 
     // For CLIENT role users, filter by their clientId
-    const userClientId = session.user.role === 'CLIENT' && session.user.clientId
-      ? session.user.clientId
+    const userClientId = session.user.role === 'CLIENT' && (session.user as any).clientId
+      ? (session.user as any).clientId
       : null;
 
     const leads = await prisma.lead.findMany({
@@ -90,8 +90,8 @@ export async function POST(req: NextRequest) {
 
     // For CLIENT role users, use their associated clientId from session
     // For AGENCY users, use the clientId from the request body
-    const clientId = session.user.role === 'CLIENT' && session.user.clientId
-      ? session.user.clientId
+    const clientId = session.user.role === 'CLIENT' && (session.user as any).clientId
+      ? (session.user as any).clientId
       : bodyClientId;
 
     // Basic validation

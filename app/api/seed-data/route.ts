@@ -9,10 +9,12 @@ export async function GET() {
     const adminPassword = await bcrypt.hash('password123', 10);
 
     // Create Home Services client
-    const homeServicesClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'contact@acmehvac.com' },
-      update: {},
-      create: {
+    const existingHomeServices = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'contact@acmehvac.com' }
+    });
+
+    const homeServicesClient = existingHomeServices || await prisma.clientCompany.create({
+      data: {
         name: 'ACME HVAC & Plumbing',
         industry: 'Home Services',
         businessSector: 'HOME_SERVICES',
@@ -77,10 +79,12 @@ export async function GET() {
     });
 
     // Legal Services
-    const legalClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'info@smithlawfirm.com' },
-      update: {},
-      create: {
+    const existingLegal = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'info@smithlawfirm.com' }
+    });
+
+    const legalClient = existingLegal || await prisma.clientCompany.create({
+      data: {
         name: 'Smith & Associates Law Firm',
         industry: 'Legal Services',
         businessSector: 'LEGAL_SERVICES',
@@ -140,10 +144,12 @@ export async function GET() {
     });
 
     // Financial Services
-    const financialClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'contact@premierinsurance.com' },
-      update: {},
-      create: {
+    const existingFinancial = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'contact@premierinsurance.com' }
+    });
+
+    const financialClient = existingFinancial || await prisma.clientCompany.create({
+      data: {
         name: 'Premier Insurance Group',
         industry: 'Insurance',
         businessSector: 'FINANCIAL_SERVICES',
@@ -202,10 +208,12 @@ export async function GET() {
     });
 
     // Real Estate
-    const realEstateClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'team@dreamhomerealty.com' },
-      update: {},
-      create: {
+    const existingRealEstate = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'team@dreamhomerealty.com' }
+    });
+
+    const realEstateClient = existingRealEstate || await prisma.clientCompany.create({
+      data: {
         name: 'Dream Home Realty',
         industry: 'Real Estate',
         businessSector: 'REAL_ESTATE',
@@ -265,10 +273,12 @@ export async function GET() {
     });
 
     // Healthcare
-    const healthcareClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'info@brightsmile.com' },
-      update: {},
-      create: {
+    const existingHealthcare = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'info@brightsmile.com' }
+    });
+
+    const healthcareClient = existingHealthcare || await prisma.clientCompany.create({
+      data: {
         name: 'Bright Smile Dental',
         industry: 'Healthcare - Dental',
         businessSector: 'HEALTHCARE',
@@ -326,10 +336,12 @@ export async function GET() {
     });
 
     // B2B SaaS
-    const saasClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'sales@cloudflow.io' },
-      update: {},
-      create: {
+    const existingSaas = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'sales@cloudflow.io' }
+    });
+
+    const saasClient = existingSaas || await prisma.clientCompany.create({
+      data: {
         name: 'CloudFlow Solutions',
         industry: 'SaaS - Project Management',
         businessSector: 'B2B_SAAS',
@@ -389,10 +401,12 @@ export async function GET() {
     });
 
     // Education
-    const educationClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'admissions@techacademy.edu' },
-      update: {},
-      create: {
+    const existingEducation = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'admissions@techacademy.edu' }
+    });
+
+    const educationClient = existingEducation || await prisma.clientCompany.create({
+      data: {
         name: 'Tech Skills Academy',
         industry: 'Online Education',
         businessSector: 'EDUCATION',
@@ -450,10 +464,12 @@ export async function GET() {
     });
 
     // Automotive
-    const automotiveClient = await prisma.clientCompany.upsert({
-      where: { contactEmail: 'sales@premierauto.com' },
-      update: {},
-      create: {
+    const existingAutomotive = await prisma.clientCompany.findFirst({
+      where: { contactEmail: 'sales@premierauto.com' }
+    });
+
+    const automotiveClient = existingAutomotive || await prisma.clientCompany.create({
+      data: {
         name: 'Premier Auto Group',
         industry: 'Automotive Sales',
         businessSector: 'AUTOMOTIVE',

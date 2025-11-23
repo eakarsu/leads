@@ -33,7 +33,9 @@ import {
 import DashboardLayout from '@/components/DashboardLayout';
 import AddIcon from '@mui/icons-material/Add';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import MicIcon from '@mui/icons-material/Mic';
 import { industryFields, type CustomField } from '@/lib/industry-fields';
+import VoiceInput from '@/components/VoiceInput';
 
 interface Lead {
   id: string;
@@ -65,7 +67,7 @@ export default function LeadsPage() {
   const [error, setError] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [leadSourceFilter, setLeadSourceFilter] = useState('');
-  const [useAIMode, setUseAIMode] = useState(false);
+  const [inputMode, setInputMode] = useState<'manual' | 'ai' | 'voice'>('manual');
   const [aiInputText, setAiInputText] = useState('');
   const [parsing, setParsing] = useState(false);
 
@@ -166,7 +168,7 @@ export default function LeadsPage() {
       });
 
       // Switch to manual mode so user can review
-      setUseAIMode(false);
+      setInputMode('manual');
       setAiInputText('');
     } catch (err: any) {
       setError(err.message || 'Failed to parse lead information');
@@ -198,7 +200,7 @@ export default function LeadsPage() {
         source: '',
         customFields: {},
       });
-      setUseAIMode(false);
+      setInputMode('manual');
       setAiInputText('');
       fetchLeads();
     } catch (err: any) {
@@ -643,10 +645,10 @@ Researching online, ready to buy now`
             <Box>
               <Typography variant="h6">Create New Lead</Typography>
               <ToggleButtonGroup
-                value={useAIMode ? 'ai' : 'manual'}
+                value={inputMode}
                 exclusive
                 onChange={(e, value) => {
-                  if (value) setUseAIMode(value === 'ai');
+                  if (value) setInputMode(value as 'manual' | 'ai' | 'voice');
                 }}
                 size="small"
                 sx={{ mt: 2 }}
@@ -658,11 +660,29 @@ Researching online, ready to buy now`
                   <AutoAwesomeIcon sx={{ mr: 0.5, fontSize: 18 }} />
                   AI Parse
                 </ToggleButton>
+                <ToggleButton value="voice">
+                  <MicIcon sx={{ mr: 0.5, fontSize: 18 }} />
+                  Voice Input
+                </ToggleButton>
               </ToggleButtonGroup>
             </Box>
           </DialogTitle>
           <DialogContent>
-            {useAIMode ? (
+            {inputMode === 'voice' ? (
+              <Box sx={{ pt: 2 }}>
+                <VoiceInput
+                  onTranscriptComplete={async (text) => {
+                    setAiInputText(text);
+                    setInputMode('ai');
+                    // Auto-trigger AI parsing
+                    setTimeout(() => {
+                      handleAIParse();
+                    }, 500);
+                  }}
+                  language="en-US"
+                />
+              </Box>
+            ) : inputMode === 'ai' ? (
               <Box sx={{ pt: 2 }}>
                 {currentExamples.length > 0 && (
                   <Box sx={{ mb: 2 }}>
@@ -829,10 +849,10 @@ Just paste the text and click "Parse with AI"!`}
           <DialogActions>
             <Button onClick={() => {
               setOpenDialog(false);
-              setUseAIMode(false);
+              setInputMode('manual');
               setAiInputText('');
             }}>Cancel</Button>
-            {!useAIMode && (
+            {inputMode === 'manual' && (
               <Button
                 onClick={handleCreateLead}
                 variant="contained"
