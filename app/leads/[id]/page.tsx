@@ -37,6 +37,7 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 
 export default function LeadDetailPageFull() {
   const params = useParams();
@@ -70,6 +71,18 @@ export default function LeadDetailPageFull() {
     content: '',
   });
   const [creatingActivity, setCreatingActivity] = useState(false);
+
+  // Convert to Opportunity states
+  const [openConvertDialog, setOpenConvertDialog] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [convertData, setConvertData] = useState({
+    opportunityName: '',
+    amount: '',
+    stage: 'QUALIFICATION',
+    probability: '25',
+    expectedCloseDate: '',
+    createContact: true,
+  });
 
   useEffect(() => {
     if (params.id) {
@@ -231,6 +244,52 @@ export default function LeadDetailPageFull() {
     }
   };
 
+  const handleConvertToOpportunity = async () => {
+    setConverting(true);
+    setError('');
+
+    try {
+      const nameParts = lead.fullName.split(' ');
+      const response = await fetch(`/api/leads/${params.id}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          createContact: convertData.createContact,
+          contactData: convertData.createContact ? {
+            firstName: nameParts[0] || '',
+            lastName: nameParts.slice(1).join(' ') || '',
+            email: lead.email,
+            phone: lead.phone,
+            title: lead.title,
+          } : null,
+          opportunityData: {
+            name: convertData.opportunityName || `${lead.fullName} - ${lead.client?.name || 'Opportunity'}`,
+            stage: convertData.stage,
+            amount: convertData.amount ? parseFloat(convertData.amount) : 0,
+            probability: parseInt(convertData.probability),
+            expectedCloseDate: convertData.expectedCloseDate || null,
+            description: lead.notes,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to convert lead');
+      }
+
+      const result = await response.json();
+      setOpenConvertDialog(false);
+
+      // Redirect to the new opportunity
+      router.push(`/opportunities/${result.opportunity.id}`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to convert lead to opportunity');
+    } finally {
+      setConverting(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'WON':
@@ -313,6 +372,15 @@ export default function LeadDetailPageFull() {
               disabled={loadingQualify}
             >
               {loadingQualify ? 'Qualifying...' : 'AI Qualify'}
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<TrendingUpIcon />}
+              onClick={() => setOpenConvertDialog(true)}
+              disabled={lead?.status === 'WON' || converting}
+            >
+              Convert to Opportunity
             </Button>
           </Box>
         </Box>
@@ -910,6 +978,93 @@ export default function LeadDetailPageFull() {
               disabled={creatingActivity || !newActivityData.content}
             >
               {creatingActivity ? 'Creating...' : 'Create Activity'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Convert to Opportunity Dialog */}
+        <Dialog
+          open={openConvertDialog}
+          onClose={() => !converting && setOpenConvertDialog(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>Convert Lead to Opportunity</DialogTitle>
+          <DialogContent>
+            <Box sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Opportunity Name"
+                value={convertData.opportunityName}
+                onChange={(e) => setConvertData({ ...convertData, opportunityName: e.target.value })}
+                margin="normal"
+                helperText="Leave blank to auto-generate"
+              />
+              <TextField
+                fullWidth
+                select
+                label="Stage"
+                value={convertData.stage}
+                onChange={(e) => setConvertData({ ...convertData, stage: e.target.value })}
+                margin="normal"
+              >
+                <MenuItem value="PROSPECTING">Prospecting</MenuItem>
+                <MenuItem value="QUALIFICATION">Qualification</MenuItem>
+                <MenuItem value="NEEDS_ANALYSIS">Needs Analysis</MenuItem>
+                <MenuItem value="PROPOSAL">Proposal</MenuItem>
+                <MenuItem value="NEGOTIATION">Negotiation</MenuItem>
+              </TextField>
+              <TextField
+                fullWidth
+                type="number"
+                label="Estimated Amount ($)"
+                value={convertData.amount}
+                onChange={(e) => setConvertData({ ...convertData, amount: e.target.value })}
+                margin="normal"
+              />
+              <TextField
+                fullWidth
+                type="number"
+                label="Probability (%)"
+                value={convertData.probability}
+                onChange={(e) => setConvertData({ ...convertData, probability: e.target.value })}
+                margin="normal"
+                inputProps={{ min: 0, max: 100 }}
+              />
+              <TextField
+                fullWidth
+                type="date"
+                label="Expected Close Date"
+                value={convertData.expectedCloseDate}
+                onChange={(e) => setConvertData({ ...convertData, expectedCloseDate: e.target.value })}
+                margin="normal"
+                InputLabelProps={{ shrink: true }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <input
+                    type="checkbox"
+                    checked={convertData.createContact}
+                    onChange={(e) => setConvertData({ ...convertData, createContact: e.target.checked })}
+                    style={{ marginRight: 8 }}
+                  />
+                  Also create a Contact record from this lead
+                </Typography>
+              </Box>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenConvertDialog(false)} disabled={converting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConvertToOpportunity}
+              variant="contained"
+              color="success"
+              disabled={converting}
+              startIcon={<TrendingUpIcon />}
+            >
+              {converting ? 'Converting...' : 'Convert to Opportunity'}
             </Button>
           </DialogActions>
         </Dialog>

@@ -19,7 +19,14 @@ import {
   Paper,
   TextField,
   MenuItem,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Autocomplete,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import DashboardLayout from '@/components/DashboardLayout';
 
 interface Activity {
@@ -38,15 +45,31 @@ interface Activity {
   };
 }
 
+interface Lead {
+  id: string;
+  fullName: string;
+  company: string;
+}
+
 export default function ActivitiesPage() {
   const router = useRouter();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterType, setFilterType] = useState('ALL');
+  const [openDialog, setOpenDialog] = useState(false);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    leadId: '',
+    type: 'EMAIL',
+    content: '',
+    timestamp: new Date().toISOString().slice(0, 16),
+  });
 
   useEffect(() => {
     fetchActivities();
+    fetchLeads();
   }, []);
 
   const fetchActivities = async () => {
@@ -59,6 +82,48 @@ export default function ActivitiesPage() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLeads = async () => {
+    try {
+      const response = await fetch('/api/leads');
+      if (!response.ok) throw new Error('Failed to fetch leads');
+      const data = await response.json();
+      setLeads(data);
+    } catch (err: any) {
+      console.error('Error fetching leads:', err);
+    }
+  };
+
+  const handleCreateActivity = async () => {
+    if (!formData.leadId || !formData.content) {
+      setError('Please select a lead and enter content');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) throw new Error('Failed to create activity');
+
+      setOpenDialog(false);
+      setFormData({
+        leadId: '',
+        type: 'EMAIL',
+        content: '',
+        timestamp: new Date().toISOString().slice(0, 16),
+      });
+      fetchActivities();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -98,21 +163,30 @@ export default function ActivitiesPage() {
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Activities</Typography>
-          <TextField
-            select
-            label="Filter by Type"
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            sx={{ minWidth: 200 }}
-            size="small"
-          >
-            <MenuItem value="ALL">All Activities</MenuItem>
-            <MenuItem value="EMAIL">Email</MenuItem>
-            <MenuItem value="CALL">Call</MenuItem>
-            <MenuItem value="LINKEDIN">LinkedIn</MenuItem>
-            <MenuItem value="MEETING">Meeting</MenuItem>
-            <MenuItem value="NOTE">Note</MenuItem>
-          </TextField>
+          <Box display="flex" gap={2}>
+            <TextField
+              select
+              label="Filter by Type"
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              sx={{ minWidth: 200 }}
+              size="small"
+            >
+              <MenuItem value="ALL">All Activities</MenuItem>
+              <MenuItem value="EMAIL">Email</MenuItem>
+              <MenuItem value="CALL">Call</MenuItem>
+              <MenuItem value="LINKEDIN">LinkedIn</MenuItem>
+              <MenuItem value="MEETING">Meeting</MenuItem>
+              <MenuItem value="NOTE">Note</MenuItem>
+            </TextField>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenDialog(true)}
+            >
+              New Activity
+            </Button>
+          </Box>
         </Box>
 
         {error && (
@@ -180,6 +254,68 @@ export default function ActivitiesPage() {
             </TableContainer>
           </CardContent>
         </Card>
+
+        {/* New Activity Dialog */}
+        <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>New Activity</DialogTitle>
+          <DialogContent>
+            <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Autocomplete
+                options={leads}
+                getOptionKey={(option) => option.id}
+                getOptionLabel={(option) => `${option.fullName} - ${option.company || 'No Company'}`}
+                value={leads.find((l) => l.id === formData.leadId) || null}
+                onChange={(_, newValue) =>
+                  setFormData({ ...formData, leadId: newValue?.id || '' })
+                }
+                renderInput={(params) => (
+                  <TextField {...params} label="Lead" required fullWidth />
+                )}
+              />
+              <TextField
+                select
+                label="Activity Type"
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                fullWidth
+                required
+              >
+                <MenuItem value="EMAIL">Email</MenuItem>
+                <MenuItem value="CALL">Call</MenuItem>
+                <MenuItem value="LINKEDIN">LinkedIn</MenuItem>
+                <MenuItem value="MEETING">Meeting</MenuItem>
+                <MenuItem value="NOTE">Note</MenuItem>
+              </TextField>
+              <TextField
+                label="Content"
+                multiline
+                rows={4}
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                fullWidth
+                required
+              />
+              <TextField
+                label="Timestamp"
+                type="datetime-local"
+                value={formData.timestamp}
+                onChange={(e) => setFormData({ ...formData, timestamp: e.target.value })}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+            <Button
+              onClick={handleCreateActivity}
+              variant="contained"
+              disabled={saving || !formData.leadId || !formData.content}
+            >
+              {saving ? 'Creating...' : 'Create Activity'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </DashboardLayout>
   );

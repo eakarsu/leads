@@ -405,7 +405,7 @@ export default function ClientDetailPage() {
                           >
                             <TableCell>{lead.fullName}</TableCell>
                             <TableCell>{lead.email}</TableCell>
-                            <TableCell>{lead.campaign.name}</TableCell>
+                            <TableCell>{lead.campaign ? lead.campaign.name : '-'}</TableCell>
                             <TableCell>
                               <Chip
                                 label={lead.status}

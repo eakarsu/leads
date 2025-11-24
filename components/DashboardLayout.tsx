@@ -29,6 +29,16 @@ import TimelineIcon from '@mui/icons-material/Timeline';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
+import WorkIcon from '@mui/icons-material/Work';
+import TaskIcon from '@mui/icons-material/Task';
+import ContactsIcon from '@mui/icons-material/Contacts';
+import InventoryIcon from '@mui/icons-material/Inventory';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import EmailIcon from '@mui/icons-material/Email';
+import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
+import ExpandLess from '@mui/icons-material/ExpandLess';
+import ExpandMore from '@mui/icons-material/ExpandMore';
+import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
 
@@ -37,6 +47,20 @@ const menuItems = [
   { text: 'Clients', icon: <BusinessIcon />, path: '/clients' },
   { text: 'Campaigns', icon: <CampaignIcon />, path: '/campaigns' },
   { text: 'Leads', icon: <PeopleIcon />, path: '/leads' },
+  {
+    text: 'Opportunities',
+    icon: <WorkIcon />,
+    path: '/opportunities',
+    submenu: [
+      { text: 'All Opportunities', path: '/opportunities' },
+      { text: 'Pipeline View', path: '/opportunities/pipeline' },
+    ]
+  },
+  { text: 'Tasks', icon: <TaskIcon />, path: '/tasks' },
+  { text: 'Contacts', icon: <ContactsIcon />, path: '/contacts' },
+  { text: 'Products', icon: <InventoryIcon />, path: '/products' },
+  { text: 'Forecasting', icon: <TrendingUpIcon />, path: '/forecasting' },
+  { text: 'Email Center', icon: <EmailIcon />, path: '/email-center' },
   { text: 'Activities', icon: <TimelineIcon />, path: '/activities' },
   { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
@@ -47,6 +71,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({});
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -55,6 +80,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleMenuClick = (path: string) => {
     router.push(path);
     setMobileOpen(false);
+  };
+
+  const handleSubmenuToggle = (text: string) => {
+    setOpenSubmenus((prev) => ({
+      ...prev,
+      [text]: !prev[text],
+    }));
   };
 
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -79,12 +111,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Divider />
       <List>
         {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <ListItemButton onClick={() => handleMenuClick(item.path)}>
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
-            </ListItemButton>
-          </ListItem>
+          <div key={item.text}>
+            <ListItem disablePadding>
+              <ListItemButton
+                onClick={() => {
+                  if (item.submenu) {
+                    handleSubmenuToggle(item.text);
+                  } else {
+                    handleMenuClick(item.path);
+                  }
+                }}
+              >
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} />
+                {item.submenu && (
+                  openSubmenus[item.text] ? <ExpandLess /> : <ExpandMore />
+                )}
+              </ListItemButton>
+            </ListItem>
+            {item.submenu && (
+              <Collapse in={openSubmenus[item.text]} timeout="auto" unmountOnExit>
+                <List component="div" disablePadding>
+                  {item.submenu.map((subItem: any) => (
+                    <ListItemButton
+                      key={subItem.text}
+                      sx={{ pl: 4 }}
+                      onClick={() => handleMenuClick(subItem.path)}
+                    >
+                      <ListItemText primary={subItem.text} />
+                    </ListItemButton>
+                  ))}
+                </List>
+              </Collapse>
+            )}
+          </div>
         ))}
       </List>
     </div>

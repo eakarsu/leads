@@ -66,6 +66,41 @@ enum BusinessSector {
   GENERAL
 }
 
+enum OpportunityStage {
+  PROSPECTING
+  QUALIFICATION
+  NEEDS_ANALYSIS
+  PROPOSAL
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DEFERRED
+  WAITING
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum EmailStatus {
+  DRAFT
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  FAILED
+}
+
 model User {
   id             String   @id @default(uuid())
   email          String   @unique
@@ -77,12 +112,20 @@ model User {
   updatedAt      DateTime @updatedAt
 
   // Relations
-  client          ClientCompany?    @relation(fields: [clientId], references: [id])
-  ownedCampaigns  Campaign[]
-  activities      LeadActivity[]
-  createdThreads  MessageThread[]
-  sentMessages    Message[]
-  submittedLeads  Lead[]
+  client           ClientCompany?    @relation(fields: [clientId], references: [id])
+  ownedCampaigns   Campaign[]
+  activities       LeadActivity[]
+  createdThreads   MessageThread[]
+  sentMessages     Message[]
+  submittedLeads   Lead[]
+  ownedOpportunities Opportunity[]
+  assignedTasks    Task[]           @relation("AssignedTasks")
+  createdTasks     Task[]           @relation("CreatedTasks")
+  events           Event[]
+  sentEmails       Email[]
+  contacts         Contact[]
+  createdNotes     Note[]           @relation("CreatedNotes")
+  uploadedAttachments Attachment[]  @relation("UploadedAttachments")
 
   @@index([clientId])
   @@map("users")
@@ -107,6 +150,10 @@ model ClientCompany {
   leads          Lead[]
   reports        ReportSnapshot[]
   messageThreads MessageThread[]
+  opportunities  Opportunity[]
+  contacts       Contact[]
+  territories    Territory[]
+  products       Product[]
 
   @@map("client_companies")
 }
@@ -173,6 +220,7 @@ model Lead {
   submitter       User?             @relation(fields: [submittedBy], references: [id])
   activities      LeadActivity[]
   enrichmentData  EnrichmentData[]
+  convertedOpportunity Opportunity?
 
   @@index([campaignId])
   @@index([clientId])
@@ -274,4 +322,344 @@ model Message {
   @@index([threadId])
   @@index([senderUserId])
   @@map("messages")
+}
+
+// NEW CRM FEATURES
+
+model Contact {
+  id              String    @id @default(uuid())
+  clientId        String
+  leadId          String?
+  firstName       String
+  lastName        String
+  email           String?
+  phone           String?
+  title           String?
+  department      String?
+  linkedinUrl     String?
+  isPrimary       Boolean   @default(false)
+  accountId       String?
+  ownerId         String
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  client        ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  owner         User          @relation(fields: [ownerId], references: [id])
+  account       Contact?      @relation("AccountHierarchy", fields: [accountId], references: [id])
+  subContacts   Contact[]     @relation("AccountHierarchy")
+  opportunities Opportunity[]
+  tasks         Task[]
+  events        Event[]
+
+  @@index([clientId])
+  @@index([ownerId])
+  @@index([accountId])
+  @@index([email])
+  @@map("contacts")
+}
+
+model Opportunity {
+  id              String            @id @default(uuid())
+  clientId        String
+  contactId       String?
+  leadId          String?           @unique
+  name            String
+  stage           OpportunityStage  @default(PROSPECTING)
+  amount          Float             @default(0)
+  probability     Int               @default(0)
+  expectedCloseDate DateTime?
+  closedDate      DateTime?
+  ownerId         String
+  description     String?           @db.Text
+  nextSteps       String?           @db.Text
+  lostReason      String?
+  competitorInfo  String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  client         ClientCompany  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contact        Contact?       @relation(fields: [contactId], references: [id])
+  lead           Lead?          @relation(fields: [leadId], references: [id])
+  owner          User           @relation(fields: [ownerId], references: [id])
+  lineItems      OpportunityLineItem[]
+  tasks          Task[]
+  events         Event[]
+
+  @@index([clientId])
+  @@index([contactId])
+  @@index([ownerId])
+  @@index([stage])
+  @@index([expectedCloseDate])
+  @@map("opportunities")
+}
+
+model OpportunityLineItem {
+  id             String   @id @default(uuid())
+  opportunityId  String
+  productId      String?
+  productName    String
+  quantity       Int      @default(1)
+  unitPrice      Float
+  discount       Float    @default(0)
+  totalPrice     Float
+  description    String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  product     Product?    @relation(fields: [productId], references: [id])
+
+  @@index([opportunityId])
+  @@index([productId])
+  @@map("opportunity_line_items")
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  subject     String
+  description String?      @db.Text
+  dueDate     DateTime?
+  status      TaskStatus   @default(NOT_STARTED)
+  priority    TaskPriority @default(MEDIUM)
+  assignedTo  String
+  createdBy   String
+  contactId   String?
+  opportunityId String?
+  relatedTo   String?
+  reminderDate DateTime?
+  completedDate DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  assignee    User         @relation("AssignedTasks", fields: [assignedTo], references: [id])
+  creator     User         @relation("CreatedTasks", fields: [createdBy], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([assignedTo])
+  @@index([createdBy])
+  @@index([contactId])
+  @@index([opportunityId])
+  @@index([dueDate])
+  @@index([status])
+  @@map("tasks")
+}
+
+model Event {
+  id            String    @id @default(uuid())
+  subject       String
+  description   String?   @db.Text
+  startTime     DateTime
+  endTime       DateTime
+  location      String?
+  isAllDay      Boolean   @default(false)
+  ownerId       String
+  contactId     String?
+  opportunityId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  owner       User         @relation(fields: [ownerId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([ownerId])
+  @@index([contactId])
+  @@index([opportunityId])
+  @@index([startTime])
+  @@map("events")
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  subject     String
+  body        String   @db.Text
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("email_templates")
+}
+
+model Email {
+  id          String      @id @default(uuid())
+  senderId    String
+  toAddress   String
+  ccAddress   String?
+  bccAddress  String?
+  subject     String
+  body        String      @db.Text
+  status      EmailStatus @default(DRAFT)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+  bouncedAt   DateTime?
+  trackingId  String?     @unique
+  templateId  String?
+  contactId   String?
+  opportunityId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  sender User @relation(fields: [senderId], references: [id])
+
+  @@index([senderId])
+  @@index([contactId])
+  @@index([opportunityId])
+  @@index([status])
+  @@index([sentAt])
+  @@map("emails")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  clientId    String
+  name        String
+  code        String?
+  description String?  @db.Text
+  unitPrice   Float
+  isActive    Boolean  @default(true)
+  category    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client    ClientCompany         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  lineItems OpportunityLineItem[]
+
+  @@index([clientId])
+  @@index([isActive])
+  @@map("products")
+}
+
+model Territory {
+  id          String   @id @default(uuid())
+  clientId    String
+  name        String
+  description String?  @db.Text
+  regions     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([isActive])
+  @@map("territories")
+}
+
+model WorkflowRule {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  objectType  String
+  triggerType String
+  conditions  Json
+  actions     Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([objectType])
+  @@index([isActive])
+  @@map("workflow_rules")
+}
+
+model Quota {
+  id          String   @id @default(uuid())
+  userId      String
+  period      String
+  target      Float
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([period])
+  @@map("quotas")
+}
+
+// Notes - Can be attached to Contacts, Leads, Opportunities
+model Note {
+  id            String   @id @default(uuid())
+  content       String   @db.Text
+  createdBy     String
+  contactId     String?
+  leadId        String?
+  opportunityId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  creator User @relation("CreatedNotes", fields: [createdBy], references: [id])
+
+  @@index([contactId])
+  @@index([leadId])
+  @@index([opportunityId])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@map("notes")
+}
+
+// File Attachments - Can be attached to any record
+model Attachment {
+  id            String   @id @default(uuid())
+  fileName      String
+  fileSize      Int
+  fileType      String
+  fileUrl       String
+  uploadedBy    String
+  contactId     String?
+  leadId        String?
+  opportunityId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  uploader User @relation("UploadedAttachments", fields: [uploadedBy], references: [id])
+
+  @@index([contactId])
+  @@index([leadId])
+  @@index([opportunityId])
+  @@index([uploadedBy])
+  @@map("attachments")
+}
+
+// Opportunity Contact Roles - Multiple contacts per opportunity with roles
+enum ContactRole {
+  DECISION_MAKER
+  INFLUENCER
+  ECONOMIC_BUYER
+  TECHNICAL_BUYER
+  CHAMPION
+  EVALUATOR
+  END_USER
+}
+
+model OpportunityContactRole {
+  id            String      @id @default(uuid())
+  opportunityId String
+  contactId     String
+  role          ContactRole
+  isPrimary     Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([opportunityId, contactId])
+  @@index([opportunityId])
+  @@index([contactId])
+  @@map("opportunity_contact_roles")
 }
