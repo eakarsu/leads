@@ -34,6 +34,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import AddIcon from '@mui/icons-material/Add';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MicIcon from '@mui/icons-material/Mic';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { industryFields, type CustomField } from '@/lib/industry-fields';
 import VoiceInput from '@/components/VoiceInput';
 
@@ -70,6 +71,10 @@ export default function LeadsPage() {
   const [inputMode, setInputMode] = useState<'manual' | 'ai' | 'voice'>('manual');
   const [aiInputText, setAiInputText] = useState('');
   const [parsing, setParsing] = useState(false);
+  const [importDialog, setImportDialog] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importCount, setImportCount] = useState(10);
+  const [importSector, setImportSector] = useState('');
 
   const [formData, setFormData] = useState({
     campaignId: '',
@@ -205,6 +210,46 @@ export default function LeadsPage() {
       fetchLeads();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const handleBulkImport = async () => {
+    if (!importSector) {
+      setError('Please select a business sector');
+      return;
+    }
+
+    setImporting(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/seed/comprehensive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sector: importSector,
+          count: importCount,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to import seed data');
+      }
+
+      const result = await response.json();
+
+      setImportDialog(false);
+      setImportSector('');
+      setImportCount(10);
+      fetchLeads();
+
+      // Show success message with counts
+      alert(`Successfully imported seed data!\n\nClients: ${result.created.clients}\nCampaigns: ${result.created.campaigns}\nLeads: ${result.created.leads}\nContacts: ${result.created.contacts}\nOpportunities: ${result.created.opportunities}\nTasks: ${result.created.tasks}\nProducts: ${result.created.products}\nActivities: ${result.created.activities}\nEmails: ${result.created.emails}\nWorkflows: ${result.created.workflows}`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to import seed data');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -519,13 +564,22 @@ Researching online, ready to buy now`
               </Typography>
             )}
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setOpenDialog(true)}
-          >
-            New Lead
-          </Button>
+          <Box display="flex" gap={2}>
+            <Button
+              variant="outlined"
+              startIcon={<CloudUploadIcon />}
+              onClick={() => setImportDialog(true)}
+            >
+              Import Seed Data
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenDialog(true)}
+            >
+              New Lead
+            </Button>
+          </Box>
         </Box>
 
         {error && (
@@ -865,6 +919,72 @@ Just paste the text and click "Parse with AI"!`}
                 Create Lead
               </Button>
             )}
+          </DialogActions>
+        </Dialog>
+
+        {/* Import Seed Data Dialog */}
+        <Dialog open={importDialog} onClose={() => setImportDialog(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Import Seed Data</DialogTitle>
+          <DialogContent>
+            <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Alert severity="info">
+                This will generate realistic test data for all CRM modules (Clients, Campaigns, Leads, Contacts, Opportunities, Tasks, Products, Activities, Emails, Workflows) based on the selected business sector.
+              </Alert>
+
+              <TextField
+                select
+                label="Business Sector"
+                value={importSector}
+                onChange={(e) => setImportSector(e.target.value)}
+                fullWidth
+                required
+                helperText="Select the business sector for realistic data"
+              >
+                <MenuItem value="HOME_SERVICES">Home Services</MenuItem>
+                <MenuItem value="LEGAL_SERVICES">Legal Services</MenuItem>
+                <MenuItem value="FINANCIAL_SERVICES">Financial Services</MenuItem>
+                <MenuItem value="REAL_ESTATE">Real Estate</MenuItem>
+                <MenuItem value="HEALTHCARE">Healthcare</MenuItem>
+                <MenuItem value="B2B_SAAS">B2B SaaS</MenuItem>
+                <MenuItem value="EDUCATION">Education</MenuItem>
+                <MenuItem value="AUTOMOTIVE">Automotive</MenuItem>
+                <MenuItem value="HOSPITALITY">Hospitality</MenuItem>
+                <MenuItem value="FITNESS_WELLNESS">Fitness & Wellness</MenuItem>
+                <MenuItem value="CONSTRUCTION">Construction</MenuItem>
+                <MenuItem value="ECOMMERCE">E-Commerce</MenuItem>
+                <MenuItem value="INSURANCE">Insurance</MenuItem>
+                <MenuItem value="SOLAR_ENERGY">Solar Energy</MenuItem>
+                <MenuItem value="GENERAL">General</MenuItem>
+              </TextField>
+
+              <TextField
+                type="number"
+                label="Number of Records"
+                value={importCount}
+                onChange={(e) => setImportCount(parseInt(e.target.value) || 10)}
+                fullWidth
+                required
+                helperText="How many records to generate for each module"
+                inputProps={{ min: 1, max: 50 }}
+              />
+
+              <Alert severity="warning">
+                This will create approximately {importCount * 10} total records across all modules. This operation may take a few seconds.
+              </Alert>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setImportDialog(false)} disabled={importing}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkImport}
+              variant="contained"
+              disabled={importing || !importSector}
+              startIcon={importing ? <CircularProgress size={20} /> : <CloudUploadIcon />}
+            >
+              {importing ? 'Importing...' : 'Import Data'}
+            </Button>
           </DialogActions>
         </Dialog>
       </Box>

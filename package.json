@@ -33,6 +33,7 @@
     "prisma": "^7.0.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "resend": "^6.5.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {

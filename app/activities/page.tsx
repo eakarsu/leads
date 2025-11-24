@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Box,
   Card,
@@ -53,6 +53,7 @@ interface Lead {
 
 export default function ActivitiesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -67,14 +68,27 @@ export default function ActivitiesPage() {
     timestamp: new Date().toISOString().slice(0, 16),
   });
 
+  // Get URL parameters for filtering
+  const urlType = searchParams.get('type');
+  const campaignId = searchParams.get('campaignId');
+
   useEffect(() => {
+    // Set initial filter type from URL
+    if (urlType) {
+      setFilterType(urlType);
+    }
     fetchActivities();
     fetchLeads();
-  }, []);
+  }, [urlType, campaignId]);
 
   const fetchActivities = async () => {
     try {
-      const response = await fetch('/api/activities');
+      const params = new URLSearchParams();
+      if (campaignId) {
+        params.append('campaignId', campaignId);
+      }
+      const url = `/api/activities${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch activities');
       const data = await response.json();
       setActivities(data);

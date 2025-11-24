@@ -126,6 +126,7 @@ model User {
   contacts         Contact[]
   createdNotes     Note[]           @relation("CreatedNotes")
   uploadedAttachments Attachment[]  @relation("UploadedAttachments")
+  notifications    Notification[]
 
   @@index([clientId])
   @@map("users")
@@ -569,6 +570,7 @@ model WorkflowRule {
   conditions  Json
   actions     Json
   isActive    Boolean  @default(true)
+  priority    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -620,7 +622,7 @@ model Attachment {
   fileName      String
   fileSize      Int
   fileType      String
-  fileUrl       String
+  fileData      Bytes    // Store file data directly in database
   uploadedBy    String
   contactId     String?
   leadId        String?
@@ -662,4 +664,100 @@ model OpportunityContactRole {
   @@index([opportunityId])
   @@index([contactId])
   @@map("opportunity_contact_roles")
+}
+
+// Lead Scoring - Track score history and trending
+enum ScoreCategory {
+  DEMOGRAPHIC
+  BEHAVIORAL
+  ENGAGEMENT
+  FIRMOGRAPHIC
+}
+
+model LeadScore {
+  id            String        @id @default(uuid())
+  leadId        String
+  score         Int
+  category      ScoreCategory
+  reason        String?
+  factors       Json?
+  calculatedAt  DateTime      @default(now())
+
+  @@index([leadId])
+  @@index([calculatedAt])
+  @@map("lead_scores")
+}
+
+// Field History / Audit Trail - Track all field changes across all objects
+model FieldHistory {
+  id            String   @id @default(uuid())
+  objectType    String   // Lead, Contact, Opportunity, etc.
+  objectId      String   // ID of the record that changed
+  fieldName     String   // Name of the field that changed
+  oldValue      String?  @db.Text // Previous value (as string)
+  newValue      String?  @db.Text // New value (as string)
+  changedBy     String   // User who made the change
+  changedAt     DateTime @default(now())
+
+  @@index([objectType, objectId])
+  @@index([changedBy])
+  @@index([changedAt])
+  @@map("field_history")
+}
+
+// Lead Assignment Rules - Auto-assign leads based on criteria
+enum AssignmentMethod {
+  ROUND_ROBIN
+  LOAD_BALANCED
+  TERRITORY
+  MANUAL
+}
+
+model LeadAssignmentRule {
+  id              String           @id @default(uuid())
+  name            String
+  description     String?          @db.Text
+  criteria        Json             // Conditions for assignment
+  assignmentMethod AssignmentMethod @default(ROUND_ROBIN)
+  assignToUserIds String[]         // List of user IDs to assign to
+  territoryId     String?          // Territory for territory-based assignment
+  isActive        Boolean          @default(true)
+  priority        Int              @default(0) // Higher priority rules run first
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([isActive])
+  @@index([priority])
+  @@map("lead_assignment_rules")
+}
+
+// Notifications System
+enum NotificationType {
+  LEAD_ASSIGNED
+  TASK_ASSIGNED
+  OPPORTUNITY_WON
+  OPPORTUNITY_LOST
+  EMAIL_RECEIVED
+  MENTION
+  COMMENT
+  WORKFLOW_TRIGGERED
+  SYSTEM
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String
+  type        NotificationType
+  title       String
+  message     String           @db.Text
+  link        String?          // URL to navigate to when clicked
+  isRead      Boolean          @default(false)
+  metadata    Json?            // Additional data
+  createdAt   DateTime         @default(now())
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
 }

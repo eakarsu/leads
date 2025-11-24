@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
         dueDate: dueDate ? new Date(dueDate) : null,
         status: status || 'NOT_STARTED',
         priority: priority || 'MEDIUM',
-        assignedTo,
+        assignedTo: assignedTo || session.user.id,
         createdBy: session.user.id,
         contactId,
         opportunityId,

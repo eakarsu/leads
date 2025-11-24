@@ -19,8 +19,12 @@ import {
   Avatar,
   Menu,
   MenuItem,
+  Tooltip,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
+import SearchIcon from '@mui/icons-material/Search';
+import GlobalSearch from './GlobalSearch';
+import NotificationBell from './NotificationBell';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import BusinessIcon from '@mui/icons-material/Business';
 import CampaignIcon from '@mui/icons-material/Campaign';
@@ -38,6 +42,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
@@ -62,6 +67,7 @@ const menuItems = [
   { text: 'Forecasting', icon: <TrendingUpIcon />, path: '/forecasting' },
   { text: 'Email Center', icon: <EmailIcon />, path: '/email-center' },
   { text: 'Activities', icon: <TimelineIcon />, path: '/activities' },
+  { text: 'Workflows', icon: <AccountTreeIcon />, path: '/workflows' },
   { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
@@ -72,6 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({});
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -172,6 +179,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {session?.user?.name || ''}
           </Typography>
+          <Tooltip title="Search (Cmd+K)">
+            <IconButton
+              color="inherit"
+              onClick={() => setSearchOpen(true)}
+              sx={{ mr: 1 }}
+            >
+              <SearchIcon />
+            </IconButton>
+          </Tooltip>
+          <NotificationBell />
           <IconButton onClick={handleProfileMenuOpen} sx={{ ml: 2 }}>
             <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}>
               {session?.user?.name?.[0]?.toUpperCase() || 'U'}
@@ -246,6 +263,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Toolbar />
         {children}
       </Box>
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </Box>
   );
 }

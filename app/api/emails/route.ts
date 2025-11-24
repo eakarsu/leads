@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { sendEmail, sendEmailFromTemplate } from '@/lib/email';
 
 export async function GET(req: NextRequest) {
   try {
@@ -67,6 +68,22 @@ export async function POST(req: NextRequest) {
       opportunityId,
     } = body;
 
+    let emailHtml = emailBody;
+    let templateVariables: Record<string, string> = {};
+
+    // If template is used, fetch and apply it
+    if (templateId) {
+      const template = await prisma.emailTemplate.findUnique({
+        where: { id: templateId },
+      });
+
+      if (template) {
+        emailHtml = template.body;
+        // Extract variables from body (for template variable replacement)
+        templateVariables = body.variables || {};
+      }
+    }
+
     // Create email record
     const email = await prisma.email.create({
       data: {
@@ -94,8 +111,46 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // TODO: Integrate with email sending service (SendGrid, AWS SES, etc.)
-    // For now, we just create the record
+    // Send email immediately if not scheduled
+    if (!scheduledAt) {
+      try {
+        const sendResult = templateId
+          ? await sendEmailFromTemplate(emailHtml, templateVariables, {
+              to: toAddress,
+              subject,
+              cc: ccAddress,
+              bcc: bccAddress,
+            })
+          : await sendEmail({
+              to: toAddress,
+              subject,
+              html: emailHtml,
+              cc: ccAddress,
+              bcc: bccAddress,
+            });
+
+        if (sendResult.success) {
+          // Update email status to DELIVERED
+          await prisma.email.update({
+            where: { id: email.id },
+            data: { status: 'DELIVERED' },
+          });
+        } else {
+          // Update email status to FAILED
+          await prisma.email.update({
+            where: { id: email.id },
+            data: { status: 'FAILED' },
+          });
+        }
+      } catch (error) {
+        console.error('Error sending email:', error);
+        // Update email status to FAILED
+        await prisma.email.update({
+          where: { id: email.id },
+          data: { status: 'FAILED' },
+        });
+      }
+    }
 
     return NextResponse.json(email, { status: 201 });
   } catch (error: any) {

@@ -14,11 +14,17 @@ export async function GET(req: NextRequest) {
     const leadId = searchParams.get('leadId');
     const type = searchParams.get('type');
     const limit = searchParams.get('limit');
+    const campaignId = searchParams.get('campaignId');
 
     const activities = await prisma.leadActivity.findMany({
       where: {
         ...(leadId && { leadId }),
         ...(type && { type: type as any }),
+        ...(campaignId && {
+          lead: {
+            campaignId: campaignId,
+          },
+        }),
       },
       include: {
         lead: {

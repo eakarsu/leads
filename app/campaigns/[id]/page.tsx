@@ -421,7 +421,7 @@ export default function CampaignDetailPage() {
                     variant="outlined"
                     startIcon={<EmailIcon />}
                     fullWidth
-                    onClick={() => router.push('/activities?type=EMAIL')}
+                    onClick={() => router.push(`/activities?type=EMAIL&campaignId=${campaignId}`)}
                   >
                     View Email Activities
                   </Button>
@@ -429,7 +429,7 @@ export default function CampaignDetailPage() {
                     variant="outlined"
                     startIcon={<PhoneIcon />}
                     fullWidth
-                    onClick={() => router.push('/activities?type=CALL')}
+                    onClick={() => router.push(`/activities?type=CALL&campaignId=${campaignId}`)}
                   >
                     View Call Activities
                   </Button>
@@ -437,7 +437,7 @@ export default function CampaignDetailPage() {
                     variant="outlined"
                     startIcon={<EventIcon />}
                     fullWidth
-                    onClick={() => router.push('/activities?type=MEETING')}
+                    onClick={() => router.push(`/activities?type=MEETING&campaignId=${campaignId}`)}
                   >
                     View Meetings
                   </Button>

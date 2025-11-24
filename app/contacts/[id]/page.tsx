@@ -26,6 +26,9 @@ import {
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
 import NotesSection from '@/components/NotesSection';
+import AttachmentsSection from '@/components/AttachmentsSection';
+import ActivityTimeline from '@/components/ActivityTimeline';
+import EmailSection from '@/components/EmailSection';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EmailIcon from '@mui/icons-material/Email';
@@ -521,12 +524,30 @@ export default function ContactDetailPage() {
             </Card>
           </Grid>
 
-          {/* Notes Section */}
+          {/* Email Section */}
           <Grid item xs={12}>
+            <EmailSection contactId={id} defaultToAddress={contact.email} />
+          </Grid>
+
+          {/* Notes Section */}
+          <Grid item xs={12} md={6}>
             <NotesSection
               contactId={id}
               currentUserId={contact?.owner.id}
             />
+          </Grid>
+
+          {/* Attachments Section */}
+          <Grid item xs={12} md={6}>
+            <AttachmentsSection
+              contactId={id}
+              currentUserId={contact?.owner.id}
+            />
+          </Grid>
+
+          {/* Activity Timeline */}
+          <Grid item xs={12}>
+            <ActivityTimeline contactId={id} />
           </Grid>
         </Grid>
       </Box>

@@ -1,4 +1,8 @@
-import { prisma } from '../lib/prisma';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient({
+  log: ['error', 'warn'],
+});
 
 async function main() {
   console.log('🌱 Seeding new CRM features (Notes, Attachments, Contact Roles)...');

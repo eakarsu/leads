@@ -197,7 +197,7 @@ export default function TasksPage() {
             dueDate: formData.dueDate || null,
             status: formData.status,
             priority: formData.priority,
-            assigneeId: formData.assignedTo,
+            assignedTo: formData.assignedTo,
             contactId: formData.contactId || null,
             opportunityId: formData.opportunityId || null,
             relatedTo: formData.relatedTo || null,
@@ -216,7 +216,7 @@ export default function TasksPage() {
             dueDate: formData.dueDate || null,
             status: formData.status,
             priority: formData.priority,
-            assigneeId: formData.assignedTo,
+            assignedTo: formData.assignedTo,
             contactId: formData.contactId || null,
             opportunityId: formData.opportunityId || null,
             relatedTo: formData.relatedTo || null,
@@ -354,17 +354,17 @@ export default function TasksPage() {
                 description: '',
                 dueDate: '',
                 status: 'NOT_STARTED',
-                priority: 'MEDIUM',
-                assignedTo: '',
-                contactId: '',
-                opportunityId: '',
-                relatedTo: '',
-              });
-              setOpenDialog(true);
-            }}
-          >
-            New Task
-          </Button>
+                  priority: 'MEDIUM',
+                  assignedTo: '',
+                  contactId: '',
+                  opportunityId: '',
+                  relatedTo: '',
+                });
+                setOpenDialog(true);
+              }}
+            >
+              New Task
+            </Button>
         </Box>
 
         {error && (

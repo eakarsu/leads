@@ -28,6 +28,11 @@ import {
   Tab,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
+import NotesSection from '@/components/NotesSection';
+import AttachmentsSection from '@/components/AttachmentsSection';
+import ActivityTimeline from '@/components/ActivityTimeline';
+import LeadScoreCard from '@/components/LeadScoreCard';
+import FieldHistorySection from '@/components/FieldHistorySection';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import EnhancedEncryptionIcon from '@mui/icons-material/EnhancedEncryption';
@@ -653,6 +658,37 @@ export default function LeadDetailPageFull() {
                 )}
               </CardContent>
             </Card>
+          </Grid>
+
+          {/* Lead Score Card */}
+          <Grid item xs={12}>
+            <LeadScoreCard leadId={params.id as string} />
+          </Grid>
+
+          {/* Notes Section */}
+          <Grid item xs={12} md={6}>
+            <NotesSection
+              leadId={params.id as string}
+              currentUserId={lead?.owner?.id}
+            />
+          </Grid>
+
+          {/* Attachments Section */}
+          <Grid item xs={12} md={6}>
+            <AttachmentsSection
+              leadId={params.id as string}
+              currentUserId={lead?.owner?.id}
+            />
+          </Grid>
+
+          {/* Activity Timeline */}
+          <Grid item xs={12}>
+            <ActivityTimeline leadId={params.id as string} />
+          </Grid>
+
+          {/* Field History */}
+          <Grid item xs={12}>
+            <FieldHistorySection objectType="Lead" objectId={params.id as string} />
           </Grid>
         </Grid>
 
