@@ -25,6 +25,12 @@ const businessSectors = [
   { value: 'B2B_SAAS', label: 'B2B SaaS (Enterprise Software)' },
   { value: 'EDUCATION', label: 'Education (Courses, Colleges)' },
   { value: 'AUTOMOTIVE', label: 'Automotive (Sales, Services)' },
+  { value: 'HOSPITALITY', label: 'Hospitality (Hotels, Restaurants)' },
+  { value: 'FITNESS_WELLNESS', label: 'Fitness & Wellness (Gyms, Studios)' },
+  { value: 'CONSTRUCTION', label: 'Construction (Contractors, Builders)' },
+  { value: 'ECOMMERCE', label: 'E-Commerce (Online Stores)' },
+  { value: 'INSURANCE', label: 'Insurance (Life, Health, Auto)' },
+  { value: 'SOLAR_ENERGY', label: 'Solar Energy (Solar Installation)' },
   { value: 'GENERAL', label: 'General / Other' },
 ];
 
@@ -196,6 +202,24 @@ function LoginForm() {
                 </Typography>
                 <Typography variant="caption" display="block" sx={{ ml: 1 }}>
                   Automotive: robert@premierauto.com
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ ml: 1 }}>
+                  Hospitality: emily@grandviewhotel.com
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ ml: 1 }}>
+                  Fitness & Wellness: marcus@zenfitstudio.com
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ ml: 1 }}>
+                  Construction: david@premierbuilders.com
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ ml: 1 }}>
+                  E-Commerce: jessica@trendygoods.com
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ ml: 1 }}>
+                  Insurance: brian@shieldinsurance.com
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ ml: 1 }}>
+                  Solar Energy: amanda@sunshinepowersolar.com
                 </Typography>
               </Box>
 

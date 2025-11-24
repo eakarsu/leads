@@ -147,7 +147,90 @@ Common terminology to recognize:
 
 Examples of what you might see:
 - "Looking at 2024 Tesla Model 3, have $10k down, good credit, trade-in 2018 Honda"
-- "Need SUV for family, 3 row seating, budget $40k, financing needed, want to test drive"`
+- "Need SUV for family, 3 row seating, budget $40k, financing needed, want to test drive"`,
+
+      HOSPITALITY: `You are extracting leads for HOSPITALITY (hotels, restaurants, event venues, catering).
+
+Common terminology to recognize:
+- Business types: "restaurant", "hotel", "wedding venue", "catering service", "bar", "bed & breakfast"
+- Service needs: "POS system", "reservation software", "event management", "marketing", "staff training"
+- Capacity: number of seats, rooms, guests, covers
+- Budget: investment amounts for systems, services, renovations
+- Timeline: "opening soon", "remodel", "need before peak season", "immediate"
+
+Examples of what you might see:
+- "New restaurant owner, 50 seats, needs POS and reservation system, opening in 2 months, budget $15k"
+- "Event venue manager, 200 capacity, looking for better booking software, current system inadequate"`,
+
+      FITNESS_WELLNESS: `You are extracting leads for FITNESS & WELLNESS (gyms, studios, personal training, spa).
+
+Common terminology to recognize:
+- Business types: "gym", "yoga studio", "CrossFit", "personal trainer", "pilates", "spa", "wellness center"
+- Membership info: current members, target membership, growth goals
+- Challenges: "retention", "getting new members", "billing issues", "scheduling problems"
+- Services needed: "membership software", "lead generation", "marketing", "equipment financing"
+- Budget: monthly or annual budget for services
+
+Examples of what you might see:
+- "Yoga studio owner, 120 members, struggling with retention, need better marketing, budget $2k/month"
+- "Opening new CrossFit box, startup phase, need everything from membership system to lead gen"`,
+
+      CONSTRUCTION: `You are extracting leads for CONSTRUCTION (general contractors, remodeling, commercial build-outs).
+
+Common terminology to recognize:
+- Project types: "new construction", "renovation", "remodel", "addition", "commercial build-out"
+- Property types: residential, commercial, multi-family, industrial
+- Project scope: size, materials, special requirements, square footage
+- Budget/value: project budgets often in hundreds of thousands or millions
+- Timeline: start date, completion deadline, planning phase
+- Permits: permit status, zoning, approvals
+
+Examples of what you might see:
+- "Homeowner wants to add 500 sq ft addition, 2 bedrooms, budget $150k, permits pending, start spring"
+- "Commercial developer, 10,000 sq ft retail space build-out, $2M budget, need contractor with retail experience"`,
+
+      ECOMMERCE: `You are extracting leads for ECOMMERCE (online stores, marketplace sellers, DTC brands).
+
+Common terminology to recognize:
+- Platforms: "Shopify", "WooCommerce", "Amazon", "Etsy", "custom built"
+- Business stage: "pre-launch", "new store", "growing", "established"
+- Revenue: monthly or annual revenue figures
+- Services needed: "store setup", "marketing", "SEO", "traffic", "fulfillment", "product sourcing"
+- Product types: categories they sell
+- Challenges: "need more traffic", "conversion issues", "fulfillment problems"
+
+Examples of what you might see:
+- "Shopify store owner, $25k/month revenue, need help with Google Ads and SEO, budget $5k"
+- "Planning to launch fashion brand, no store yet, need full setup and launch marketing, budget $15k"`,
+
+      INSURANCE: `You are extracting leads for INSURANCE (life, health, auto, home, business insurance).
+
+Common terminology to recognize:
+- Insurance types: "life", "health", "auto", "home", "business", "disability", "long-term care"
+- Coverage amounts: dollar amounts for policies
+- Current status: "no coverage", "have coverage", "looking to add", "switching"
+- Age info: age ranges affect pricing
+- Health: health status, pre-existing conditions, smoking status
+- Timeline: urgency of coverage need
+
+Examples of what you might see:
+- "Family of 4, need $500k life insurance, both parents mid-30s, non-smokers, good health, want quotes ASAP"
+- "Small business owner, 15 employees, need business insurance package, current policy expiring next month"`,
+
+      SOLAR_ENERGY: `You are extracting leads for SOLAR ENERGY (solar panel installation, renewable energy).
+
+Common terminology to recognize:
+- Property types: residential, commercial, agricultural, industrial
+- Electric bill: monthly electricity costs indicate system size needed
+- Motivation: "save money", "environment", "energy independence", "tax incentives"
+- Roof info: roof condition, age, replacement needs
+- Ownership: own vs rent, landlord approval
+- Financing: "cash", "loan", "lease", "PPA"
+- Timeline: readiness to install
+
+Examples of what you might see:
+- "Homeowner, $300/month electric bill, want to go solar to save money, roof 5 years old, good condition, interested in financing options"
+- "Business owner, commercial building, $2k/month electric, want tax incentives, ready to install this quarter, cash purchase"`
     };
 
     const sectorContext = sectorContexts[businessSector] || `You are a lead information extraction assistant for ${businessSector || 'GENERAL'} business.`;
