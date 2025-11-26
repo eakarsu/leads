@@ -184,7 +184,7 @@ export default function PipelineViewPage() {
             const total = pipelineData.totals[stage.key as keyof typeof pipelineData.totals];
 
             return (
-              <Grid item xs={12} sm={6} md={2.4} key={stage.key}>
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }} key={stage.key}>
                 <Paper
                   sx={{
                     p: 2,

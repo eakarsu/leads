@@ -22,28 +22,30 @@ export async function GET(req: NextRequest) {
 
     const roles = await prisma.opportunityContactRole.findMany({
       where: { opportunityId },
-      include: {
-        contact: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            title: true,
-          },
-        },
-        opportunity: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
       orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
     });
 
-    return NextResponse.json(roles);
+    // Fetch contacts and opportunity data separately
+    const contactIds = [...new Set(roles.map(r => r.contactId))];
+    const [contacts, opportunity] = await Promise.all([
+      prisma.contact.findMany({
+        where: { id: { in: contactIds } },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, title: true },
+      }),
+      prisma.opportunity.findUnique({
+        where: { id: opportunityId },
+        select: { id: true, name: true },
+      }),
+    ]);
+    const contactMap = new Map(contacts.map(c => [c.id, c]));
+
+    const rolesWithRelations = roles.map(r => ({
+      ...r,
+      contact: contactMap.get(r.contactId),
+      opportunity,
+    }));
+
+    return NextResponse.json(rolesWithRelations);
   } catch (error: any) {
     console.error('Error fetching opportunity contact roles:', error);
     return NextResponse.json(
@@ -100,27 +102,21 @@ export async function POST(req: NextRequest) {
         role,
         isPrimary: isPrimary || false,
       },
-      include: {
-        contact: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            title: true,
-          },
-        },
-        opportunity: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
     });
 
-    return NextResponse.json(contactRole, { status: 201 });
+    // Fetch contact and opportunity data separately
+    const [contact, opportunity] = await Promise.all([
+      prisma.contact.findUnique({
+        where: { id: contactId },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, title: true },
+      }),
+      prisma.opportunity.findUnique({
+        where: { id: opportunityId },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    return NextResponse.json({ ...contactRole, contact, opportunity }, { status: 201 });
   } catch (error: any) {
     console.error('Error creating opportunity contact role:', error);
     return NextResponse.json(

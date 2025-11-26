@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
                 userId,
                 count: await prisma.lead.count({
                   where: {
-                    ownerId: userId,
+                    submittedBy: userId,
                     status: { not: 'UNQUALIFIED' },
                   },
                 }),
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
           // Update the lead
           await prisma.lead.update({
             where: { id: leadId },
-            data: { ownerId: assignedUserId },
+            data: { submittedBy: assignedUserId },
           });
 
           return NextResponse.json({

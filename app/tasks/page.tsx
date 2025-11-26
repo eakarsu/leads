@@ -29,6 +29,7 @@ import {
   IconButton,
   Badge,
   Grid,
+  Divider,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
 import AddIcon from '@mui/icons-material/Add';
@@ -311,21 +312,22 @@ export default function TasksPage() {
     });
   };
 
-  const ServerDay = (props: PickersDayProps<Date>) => {
-    const { day, ...other } = props;
-    const tasksForDay = getTasksForDate(day);
+  // Temporarily disabled due to date-fns compatibility issue
+  // const ServerDay = (props: PickersDayProps<Date>) => {
+  //   const { day, ...other } = props;
+  //   const tasksForDay = getTasksForDate(day);
 
-    return (
-      <Badge
-        key={day.toString()}
-        overlap="circular"
-        badgeContent={tasksForDay.length > 0 ? tasksForDay.length : undefined}
-        color="primary"
-      >
-        <PickersDay {...other} day={day} />
-      </Badge>
-    );
-  };
+  //   return (
+  //     <Badge
+  //       key={day.toString()}
+  //       overlap="circular"
+  //       badgeContent={tasksForDay.length > 0 ? tasksForDay.length : undefined}
+  //       color="primary"
+  //     >
+  //       <PickersDay {...other} day={day} />
+  //     </Badge>
+  //   );
+  // };
 
   if (loading) {
     return (
@@ -527,7 +529,7 @@ export default function TasksPage() {
           </>
         ) : (
           <Grid container spacing={3}>
-            <Grid item xs={12} md={8}>
+            <Grid size={{ xs: 12, md: 8 }}>
               <Card>
                 <CardContent>
                   {/* Temporarily disabled due to date-fns compatibility issue */}
@@ -546,7 +548,7 @@ export default function TasksPage() {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={4}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>

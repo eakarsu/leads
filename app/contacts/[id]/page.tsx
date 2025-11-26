@@ -280,7 +280,7 @@ export default function ContactDetailPage() {
         )}
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -288,14 +288,14 @@ export default function ContactDetailPage() {
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
                 <Grid container spacing={2}>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}>
                     <Box display="flex" alignItems="center" gap={1}>
                       <EmailIcon color="action" />
                       <Typography variant="body1">{contact.email}</Typography>
                     </Box>
                   </Grid>
                   {contact.phone && (
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <Box display="flex" alignItems="center" gap={1}>
                         <PhoneIcon color="action" />
                         <Typography variant="body1">{contact.phone}</Typography>
@@ -303,7 +303,7 @@ export default function ContactDetailPage() {
                     </Grid>
                   )}
                   {contact.linkedinUrl && (
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <Box display="flex" alignItems="center" gap={1}>
                         <LinkedInIcon color="action" />
                         <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer">
@@ -312,32 +312,32 @@ export default function ContactDetailPage() {
                       </Box>
                     </Grid>
                   )}
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Title
                     </Typography>
                     <Typography variant="body1">{contact.title || '-'}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Department
                     </Typography>
                     <Typography variant="body1">{contact.department || '-'}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Company
                     </Typography>
                     <Typography variant="body1">{contact.client.name}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Owner
                     </Typography>
                     <Typography variant="body1">{contact.owner.name}</Typography>
                   </Grid>
                   {contact.notes && (
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <Typography variant="body2" color="text.secondary">
                         Notes
                       </Typography>
@@ -350,7 +350,7 @@ export default function ContactDetailPage() {
           </Grid>
 
           {contact.account && (
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
@@ -372,7 +372,7 @@ export default function ContactDetailPage() {
           )}
 
           {contact.subContacts.length > 0 && (
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
@@ -399,7 +399,7 @@ export default function ContactDetailPage() {
             </Grid>
           )}
 
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -451,7 +451,7 @@ export default function ContactDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -492,7 +492,7 @@ export default function ContactDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -525,12 +525,12 @@ export default function ContactDetailPage() {
           </Grid>
 
           {/* Email Section */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <EmailSection contactId={id} defaultToAddress={contact.email} />
           </Grid>
 
           {/* Notes Section */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <NotesSection
               contactId={id}
               currentUserId={contact?.owner.id}
@@ -538,7 +538,7 @@ export default function ContactDetailPage() {
           </Grid>
 
           {/* Attachments Section */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <AttachmentsSection
               contactId={id}
               currentUserId={contact?.owner.id}
@@ -546,7 +546,7 @@ export default function ContactDetailPage() {
           </Grid>
 
           {/* Activity Timeline */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <ActivityTimeline contactId={id} />
           </Grid>
         </Grid>

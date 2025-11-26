@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma';
+import { AssignmentMethod, Prisma } from '@prisma/client';
 
 async function main() {
   console.log('🎯 Seeding lead assignment rules...');
@@ -75,7 +76,10 @@ async function main() {
 
   for (const rule of assignmentRules) {
     await prisma.leadAssignmentRule.create({
-      data: rule,
+      data: {
+        ...rule,
+        assignmentMethod: rule.assignmentMethod as AssignmentMethod,
+      },
     });
   }
 

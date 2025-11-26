@@ -154,7 +154,7 @@ export async function GET() {
               subject,
               body,
               status,
-              sentAt: status !== 'DRAFT' ? sentAt : null,
+              sentAt,
               senderId: user.id,
               toAddress: contact.email || `${contact.firstName.toLowerCase()}@${contact.client.name.replace(/\s+/g, '').toLowerCase()}.com`,
               contactId: contact.id,

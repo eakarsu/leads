@@ -614,7 +614,7 @@ export default function EinsteinPage() {
         {tabValue === 0 && (
           <Grid container spacing={3}>
             {insights.length === 0 ? (
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12 }}>
                 <Card>
                   <CardContent>
                     <Box textAlign="center" py={4}>
@@ -638,7 +638,7 @@ export default function EinsteinPage() {
               </Grid>
             ) : (
               <>
-                <Grid item xs={12}>
+                <Grid size={{ xs: 12 }}>
                   <Box display="flex" justifyContent="flex-end" mb={2}>
                     <Button
                       variant="contained"
@@ -651,7 +651,7 @@ export default function EinsteinPage() {
                   </Box>
                 </Grid>
                 {insights.map((insight) => (
-                  <Grid item xs={12} md={6} key={insight.id}>
+                  <Grid size={{ xs: 12, md: 6 }} key={insight.id}>
                     <Card>
                       <CardContent>
                         <Box display="flex" alignItems="flex-start" gap={2}>
@@ -716,7 +716,7 @@ export default function EinsteinPage() {
         {tabValue === 1 && (
           <Grid container spacing={3}>
             {forecasts.length === 0 ? (
-              <Grid item xs={12}>
+              <Grid size={{ xs: 12 }}>
                 <Card>
                   <CardContent>
                     <Box textAlign="center" py={4}>
@@ -741,7 +741,7 @@ export default function EinsteinPage() {
               </Grid>
             ) : (
               <>
-                <Grid item xs={12}>
+                <Grid size={{ xs: 12 }}>
                   <Box display="flex" justifyContent="flex-end" mb={2}>
                     <Button
                       variant="contained"
@@ -754,7 +754,7 @@ export default function EinsteinPage() {
                     </Button>
                   </Box>
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Card>
                     <CardContent>
                       <Typography variant="h6" gutterBottom>
@@ -789,7 +789,7 @@ export default function EinsteinPage() {
                     </CardContent>
                   </Card>
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Card>
                     <CardContent>
                       <Typography variant="h6" gutterBottom>
@@ -832,7 +832,7 @@ export default function EinsteinPage() {
         {/* Tab 2: Lead Scoring */}
         {tabValue === 2 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -902,7 +902,7 @@ export default function EinsteinPage() {
         {/* Tab 3: Opportunity Scoring */}
         {tabValue === 3 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -978,7 +978,7 @@ export default function EinsteinPage() {
         {/* Tab 4: Account Health */}
         {tabValue === 4 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -1055,7 +1055,7 @@ export default function EinsteinPage() {
         {/* Tab 5: Email Insights */}
         {tabValue === 5 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box textAlign="center" py={4}>
@@ -1149,7 +1149,7 @@ export default function EinsteinPage() {
         {/* Tab 6: Engagement Scoring */}
         {tabValue === 6 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
@@ -1293,7 +1293,7 @@ export default function EinsteinPage() {
         {/* Tab 7: Next Best Actions */}
         {tabValue === 7 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <NextBestActions autoLoad={true} />
             </Grid>
           </Grid>
@@ -1302,7 +1302,7 @@ export default function EinsteinPage() {
         {/* Tab 8: Conversation Insights */}
         {tabValue === 8 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
@@ -1368,7 +1368,7 @@ Customer: Thanks, bye.`)}
                   {conversationInsights && (
                     <Box mt={3}>
                       <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" gutterBottom>
                               Sentiment
@@ -1382,7 +1382,7 @@ Customer: Thanks, bye.`)}
                             />
                           </Paper>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" gutterBottom>
                               Deal Score
@@ -1399,7 +1399,7 @@ Customer: Thanks, bye.`)}
                             </Box>
                           </Paper>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" gutterBottom>
                               Key Topics
@@ -1411,7 +1411,7 @@ Customer: Thanks, bye.`)}
                             </Box>
                           </Paper>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" gutterBottom>
                               Action Items
@@ -1425,7 +1425,7 @@ Customer: Thanks, bye.`)}
                             </List>
                           </Paper>
                         </Grid>
-                        <Grid item xs={12}>
+                        <Grid size={{ xs: 12 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" gutterBottom>
                               Summary
@@ -1435,7 +1435,7 @@ Customer: Thanks, bye.`)}
                             </Typography>
                           </Paper>
                         </Grid>
-                        <Grid item xs={12}>
+                        <Grid size={{ xs: 12 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" gutterBottom>
                               Recommended Next Steps
@@ -1461,7 +1461,7 @@ Customer: Thanks, bye.`)}
         {/* Tab 9: Activity Capture */}
         {tabValue === 9 && (
           <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -1518,7 +1518,7 @@ Customer: Thanks, bye.`)}
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -1575,7 +1575,7 @@ Customer: Thanks, bye.`)}
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Alert severity="success">
                 <Typography variant="body2" fontWeight="bold" gutterBottom>
                   Activity Capture is Active
@@ -1591,7 +1591,7 @@ Customer: Thanks, bye.`)}
         {/* Tab 10: Einstein Search */}
         {tabValue === 10 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -1640,7 +1640,7 @@ Customer: Thanks, bye.`)}
                   {searchResults && Object.keys(searchResults).length > 0 && (
                     <Grid container spacing={2}>
                       {searchResults.leads?.length > 0 && (
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                               Leads ({searchResults.leads.length})
@@ -1662,7 +1662,7 @@ Customer: Thanks, bye.`)}
                       )}
 
                       {searchResults.opportunities?.length > 0 && (
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                               Opportunities ({searchResults.opportunities.length})
@@ -1684,7 +1684,7 @@ Customer: Thanks, bye.`)}
                       )}
 
                       {searchResults.clients?.length > 0 && (
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                               Accounts ({searchResults.clients.length})
@@ -1706,7 +1706,7 @@ Customer: Thanks, bye.`)}
                       )}
 
                       {searchResults.contacts?.length > 0 && (
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                               Contacts ({searchResults.contacts.length})
@@ -1748,7 +1748,7 @@ Customer: Thanks, bye.`)}
         {/* Tab 11: Einstein Bots */}
         {tabValue === 11 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <EinsteinBots />
             </Grid>
           </Grid>
@@ -1757,7 +1757,7 @@ Customer: Thanks, bye.`)}
         {/* Tab 12: Einstein Analytics */}
         {tabValue === 12 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -1768,7 +1768,7 @@ Customer: Thanks, bye.`)}
                     Advanced analytics dashboards with AI-powered insights
                   </Typography>
                   <Grid container spacing={2}>
-                    <Grid item xs={12} md={4}>
+                    <Grid size={{ xs: 12, md: 4 }}>
                       <Paper sx={{ p: 3, textAlign: 'center' }}>
                         <TrendingUpIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
                         <Typography variant="h4" fontWeight="bold">
@@ -1779,7 +1779,7 @@ Customer: Thanks, bye.`)}
                         </Typography>
                       </Paper>
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid size={{ xs: 12, md: 4 }}>
                       <Paper sx={{ p: 3, textAlign: 'center' }}>
                         <BusinessIcon sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
                         <Typography variant="h4" fontWeight="bold">
@@ -1790,7 +1790,7 @@ Customer: Thanks, bye.`)}
                         </Typography>
                       </Paper>
                     </Grid>
-                    <Grid item xs={12} md={4}>
+                    <Grid size={{ xs: 12, md: 4 }}>
                       <Paper sx={{ p: 3, textAlign: 'center' }}>
                         <AutoAwesomeIcon sx={{ fontSize: 48, color: 'warning.main', mb: 1 }} />
                         <Typography variant="h4" fontWeight="bold">
@@ -1803,7 +1803,7 @@ Customer: Thanks, bye.`)}
                     </Grid>
                   </Grid>
                   <Grid container spacing={2} mt={2}>
-                    <Grid item xs={12} md={6}>
+                    <Grid size={{ xs: 12, md: 6 }}>
                       <Paper sx={{ p: 2 }}>
                         <Typography variant="subtitle2" gutterBottom>
                           Lead Conversion Trend
@@ -1825,7 +1825,7 @@ Customer: Thanks, bye.`)}
                         <Chip label="+12% improvement" color="success" size="small" sx={{ mt: 1 }} />
                       </Paper>
                     </Grid>
-                    <Grid item xs={12} md={6}>
+                    <Grid size={{ xs: 12, md: 6 }}>
                       <Paper sx={{ p: 2 }}>
                         <Typography variant="subtitle2" gutterBottom>
                           Pipeline Health Score
@@ -1843,7 +1843,7 @@ Customer: Thanks, bye.`)}
                         </Typography>
                       </Paper>
                     </Grid>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <Paper sx={{ p: 2 }}>
                         <Typography variant="subtitle2" gutterBottom>
                           AI-Powered Insights
@@ -1880,7 +1880,7 @@ Customer: Thanks, bye.`)}
         {/* Tab 13: Case Classification */}
         {tabValue === 13 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
@@ -1979,7 +1979,7 @@ Customer: Thanks, bye.`)}
                   {caseClassification && (
                     <Box mt={3}>
                       <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                               Category
@@ -1987,7 +1987,7 @@ Customer: Thanks, bye.`)}
                             <Chip label={caseClassification.category} color="primary" />
                           </Paper>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                               Priority
@@ -1995,7 +1995,7 @@ Customer: Thanks, bye.`)}
                             <Chip label={caseClassification.priority} color={getPriorityColor(caseClassification.priority)} />
                           </Paper>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                               Sentiment
@@ -2006,7 +2006,7 @@ Customer: Thanks, bye.`)}
                             } />
                           </Paper>
                         </Grid>
-                        <Grid item xs={12} md={6}>
+                        <Grid size={{ xs: 12, md: 6 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                               Suggested Assignee
@@ -2014,7 +2014,7 @@ Customer: Thanks, bye.`)}
                             <Typography variant="body2">{caseClassification.suggestedAssignee}</Typography>
                           </Paper>
                         </Grid>
-                        <Grid item xs={12}>
+                        <Grid size={{ xs: 12 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                               Estimated Resolution Time
@@ -2022,7 +2022,7 @@ Customer: Thanks, bye.`)}
                             <Typography variant="body2">{caseClassification.estimatedResolutionTime}</Typography>
                           </Paper>
                         </Grid>
-                        <Grid item xs={12}>
+                        <Grid size={{ xs: 12 }}>
                           <Paper sx={{ p: 2 }}>
                             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                               Tags
@@ -2046,7 +2046,7 @@ Customer: Thanks, bye.`)}
         {/* Tab 14: Article Recommendations */}
         {tabValue === 14 && (
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={{ xs: 12 }}>
               <Card>
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -2131,7 +2131,7 @@ Customer: Thanks, bye.`)}
                       </Typography>
                       <Grid container spacing={2}>
                         {articleRecommendations.map((article, index) => (
-                          <Grid item xs={12} key={index}>
+                          <Grid size={{ xs: 12 }} key={index}>
                             <Paper sx={{ p: 2 }}>
                               <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
                                 <Box flex={1}>

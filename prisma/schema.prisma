@@ -3,6 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -140,9 +141,12 @@ model ClientCompany {
   businessSector BusinessSector @default(GENERAL)
   website        String?
   contactName    String
-  contactEmail   String
+  contactEmail   String         @unique
   contactPhone   String?
   notes          String?        @db.Text
+  isPartner      Boolean        @default(false)
+  partnerLevel   String?        // BRONZE, SILVER, GOLD, PLATINUM
+  type           String?        // Customer, Partner, Prospect
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -343,6 +347,9 @@ model Contact {
   accountId       String?
   ownerId         String
   notes           String?   @db.Text
+  isPortalUser    Boolean   @default(false)
+  isPartnerUser   Boolean   @default(false)
+  portalStatus    String?   // ACTIVE, INACTIVE, DISABLED, PENDING
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -861,5 +868,1582 @@ model AIInsight {
   @@index([priority, dismissed])
   @@index([createdAt])
   @@map("ai_insights")
+}
+
+// ============================================
+// NEW SALESFORCE FEATURES
+// ============================================
+
+// CASES / SERVICE CLOUD
+enum CaseStatus {
+  NEW
+  OPEN
+  IN_PROGRESS
+  ESCALATED
+  ON_HOLD
+  WAITING_ON_CUSTOMER
+  CLOSED
+  RESOLVED
+}
+
+enum CasePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CaseOrigin {
+  PHONE
+  EMAIL
+  WEB
+  CHAT
+  SOCIAL
+  PARTNER
+}
+
+model Case {
+  id              String       @id @default(uuid())
+  caseNumber      String       @unique @default(uuid())
+  subject         String
+  description     String?      @db.Text
+  status          CaseStatus   @default(NEW)
+  priority        CasePriority @default(MEDIUM)
+  origin          CaseOrigin   @default(WEB)
+  type            String?      // Bug, Feature Request, Question, etc.
+  reason          String?      // Installation, User Education, etc.
+  contactId       String?
+  accountId       String?
+  ownerId         String
+  queueId         String?
+  parentCaseId    String?      // For case hierarchies
+  escalatedAt     DateTime?
+  closedAt        DateTime?
+  resolution      String?      @db.Text
+  internalComments String?     @db.Text
+  slaDeadline     DateTime?
+  firstResponseAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  queue         CaseQueue?    @relation(fields: [queueId], references: [id])
+  parentCase    Case?         @relation("CaseHierarchy", fields: [parentCaseId], references: [id])
+  childCases    Case[]        @relation("CaseHierarchy")
+  comments      CaseComment[]
+  escalations   CaseEscalation[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([ownerId])
+  @@index([queueId])
+  @@index([contactId])
+  @@index([accountId])
+  @@index([createdAt])
+  @@map("cases")
+}
+
+model CaseComment {
+  id        String   @id @default(uuid())
+  caseId    String
+  body      String   @db.Text
+  isPublic  Boolean  @default(false)
+  createdBy String
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("case_comments")
+}
+
+model CaseQueue {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  memberIds   String[] // User IDs who can access this queue
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases Case[]
+
+  @@map("case_queues")
+}
+
+model CaseEscalation {
+  id              String   @id @default(uuid())
+  caseId          String
+  escalatedTo     String   // User ID
+  escalatedBy     String   // User ID
+  reason          String   @db.Text
+  escalatedAt     DateTime @default(now())
+  resolvedAt      DateTime?
+  resolutionNotes String?  @db.Text
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("case_escalations")
+}
+
+model SLA {
+  id                  String   @id @default(uuid())
+  name                String
+  description         String?  @db.Text
+  priority            CasePriority
+  firstResponseMinutes Int     // SLA for first response
+  resolutionMinutes   Int      // SLA for resolution
+  businessHoursOnly   Boolean  @default(true)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("slas")
+}
+
+// KNOWLEDGE BASE
+enum ArticleStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+model KnowledgeCategory {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  parentId    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   KnowledgeCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children KnowledgeCategory[] @relation("CategoryHierarchy")
+  articles KnowledgeArticle[]
+
+  @@index([parentId])
+  @@map("knowledge_categories")
+}
+
+model KnowledgeArticle {
+  id            String        @id @default(uuid())
+  articleNumber String        @unique @default(uuid())
+  title         String
+  summary       String?       @db.Text
+  content       String        @db.Text
+  status        ArticleStatus @default(DRAFT)
+  categoryId    String?
+  authorId      String
+  version       Int           @default(1)
+  viewCount     Int           @default(0)
+  helpfulCount  Int           @default(0)
+  notHelpfulCount Int         @default(0)
+  keywords      String[]
+  isPublic      Boolean       @default(false) // Visible to customers
+  publishedAt   DateTime?
+  archivedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  category KnowledgeCategory? @relation(fields: [categoryId], references: [id])
+  versions ArticleVersion[]
+  attachments ArticleAttachment[]
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([isPublic])
+  @@map("knowledge_articles")
+}
+
+model ArticleVersion {
+  id        String   @id @default(uuid())
+  articleId String
+  version   Int
+  title     String
+  content   String   @db.Text
+  changedBy String
+  changeNotes String? @db.Text
+  createdAt DateTime @default(now())
+
+  article KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@map("article_versions")
+}
+
+model ArticleAttachment {
+  id        String   @id @default(uuid())
+  articleId String
+  fileName  String
+  fileSize  Int
+  fileType  String
+  fileUrl   String
+  createdAt DateTime @default(now())
+
+  article KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@map("article_attachments")
+}
+
+// CONTRACTS
+enum ContractStatus {
+  DRAFT
+  IN_APPROVAL
+  ACTIVATED
+  EXPIRED
+  TERMINATED
+}
+
+model Contract {
+  id              String         @id @default(uuid())
+  contractNumber  String         @unique @default(uuid())
+  accountId       String
+  name            String
+  status          ContractStatus @default(DRAFT)
+  startDate       DateTime
+  endDate         DateTime
+  contractTerm    Int            // Months
+  ownerExpirationNotice Int?     // Days before expiration to notify
+  description     String?        @db.Text
+  specialTerms    String?        @db.Text
+  totalValue      Float          @default(0)
+  ownerId         String
+  signedDate      DateTime?
+  companySignedBy String?
+  customerSignedBy String?
+  billingStreet   String?
+  billingCity     String?
+  billingState    String?
+  billingPostalCode String?
+  billingCountry  String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  lineItems ContractLineItem[]
+  renewals  ContractRenewal[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([endDate])
+  @@index([ownerId])
+  @@map("contracts")
+}
+
+model ContractLineItem {
+  id          String   @id @default(uuid())
+  contractId  String
+  productId   String?
+  productName String
+  quantity    Int      @default(1)
+  unitPrice   Float
+  discount    Float    @default(0)
+  totalPrice  Float
+  startDate   DateTime?
+  endDate     DateTime?
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+  @@map("contract_line_items")
+}
+
+model ContractRenewal {
+  id            String   @id @default(uuid())
+  contractId    String
+  renewalDate   DateTime
+  renewalAmount Float
+  renewalTerm   Int      // Months
+  status        String   // Pending, Approved, Declined
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId])
+  @@map("contract_renewals")
+}
+
+// QUOTES
+enum QuoteStatus {
+  DRAFT
+  NEEDS_REVIEW
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  PRESENTED
+  ACCEPTED
+  DENIED
+}
+
+model Quote {
+  id              String      @id @default(uuid())
+  quoteNumber     String      @unique @default(uuid())
+  name            String
+  opportunityId   String?
+  accountId       String
+  contactId       String?
+  status          QuoteStatus @default(DRAFT)
+  expirationDate  DateTime
+  subtotal        Float       @default(0)
+  discount        Float       @default(0)
+  discountType    String      @default("AMOUNT") // AMOUNT or PERCENT
+  tax             Float       @default(0)
+  shippingHandling Float      @default(0)
+  grandTotal      Float       @default(0)
+  description     String?     @db.Text
+  terms           String?     @db.Text
+  ownerId         String
+  isPrimary       Boolean     @default(false)
+  pdfUrl          String?
+  signatureUrl    String?
+  signedAt        DateTime?
+  signedBy        String?
+  billingName     String?
+  billingStreet   String?
+  billingCity     String?
+  billingState    String?
+  billingPostalCode String?
+  billingCountry  String?
+  shippingName    String?
+  shippingStreet  String?
+  shippingCity    String?
+  shippingState   String?
+  shippingPostalCode String?
+  shippingCountry String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  lineItems QuoteLineItem[]
+
+  @@index([opportunityId])
+  @@index([accountId])
+  @@index([status])
+  @@index([ownerId])
+  @@map("quotes")
+}
+
+model QuoteLineItem {
+  id          String   @id @default(uuid())
+  quoteId     String
+  productId   String?
+  productName String
+  productCode String?
+  quantity    Int      @default(1)
+  listPrice   Float
+  unitPrice   Float
+  discount    Float    @default(0)
+  totalPrice  Float
+  sortOrder   Int      @default(0)
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quote_line_items")
+}
+
+// PRICE BOOKS
+model PriceBook {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  isStandard  Boolean  @default(false) // Default price book
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entries PriceBookEntry[]
+
+  @@map("price_books")
+}
+
+model PriceBookEntry {
+  id          String   @id @default(uuid())
+  priceBookId String
+  productId   String
+  unitPrice   Float
+  isActive    Boolean  @default(true)
+  useStandardPrice Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  priceBook PriceBook @relation(fields: [priceBookId], references: [id], onDelete: Cascade)
+
+  @@unique([priceBookId, productId])
+  @@index([productId])
+  @@map("price_book_entries")
+}
+
+// APPROVAL PROCESSES
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RECALLED
+}
+
+model ApprovalProcess {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?  @db.Text
+  objectType      String   // Quote, Contract, Opportunity, etc.
+  entryCriteria   Json     // Conditions for when approval is required
+  isActive        Boolean  @default(true)
+  allowRecall     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  steps     ApprovalStep[]
+  instances ApprovalInstance[]
+
+  @@index([objectType])
+  @@map("approval_processes")
+}
+
+model ApprovalStep {
+  id                String   @id @default(uuid())
+  processId         String
+  stepNumber        Int
+  name              String
+  description       String?  @db.Text
+  approverType      String   // USER, MANAGER, QUEUE, ROLE
+  approverIds       String[] // User IDs or Role IDs
+  unanimousApproval Boolean  @default(false) // All must approve vs any can approve
+  rejectBehavior    String   @default("FINAL") // FINAL or BACK_TO_PREVIOUS
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  process ApprovalProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+  @@map("approval_steps")
+}
+
+model ApprovalInstance {
+  id              String         @id @default(uuid())
+  processId       String
+  objectType      String
+  objectId        String
+  status          ApprovalStatus @default(PENDING)
+  currentStep     Int            @default(1)
+  submittedBy     String
+  submittedAt     DateTime       @default(now())
+  completedAt     DateTime?
+  comments        String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  process  ApprovalProcess  @relation(fields: [processId], references: [id])
+  actions  ApprovalAction[]
+
+  @@index([processId])
+  @@index([objectType, objectId])
+  @@index([status])
+  @@map("approval_instances")
+}
+
+model ApprovalAction {
+  id          String         @id @default(uuid())
+  instanceId  String
+  stepNumber  Int
+  actorId     String         // User who took action
+  action      ApprovalStatus // APPROVED, REJECTED, RECALLED
+  comments    String?        @db.Text
+  actionAt    DateTime       @default(now())
+
+  instance ApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@map("approval_actions")
+}
+
+// DUPLICATE MANAGEMENT
+model DuplicateRule {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?  @db.Text
+  objectType    String   // Lead, Contact, Account
+  matchCriteria Json     // Fields to compare and match logic
+  isActive      Boolean  @default(true)
+  actionOnCreate String  @default("ALERT") // ALERT, BLOCK, ALLOW
+  actionOnEdit  String   @default("ALERT")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([objectType])
+  @@map("duplicate_rules")
+}
+
+model DuplicateRecordSet {
+  id          String   @id @default(uuid())
+  objectType  String
+  recordIds   String[] // IDs of duplicate records
+  masterRecordId String? // The record chosen as master after merge
+  status      String   @default("PENDING") // PENDING, MERGED, IGNORED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([objectType])
+  @@index([status])
+  @@map("duplicate_record_sets")
+}
+
+// DATA IMPORT
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  PARTIALLY_COMPLETED
+}
+
+model DataImport {
+  id              String       @id @default(uuid())
+  name            String
+  objectType      String       // Lead, Contact, Account
+  fileName        String
+  fileSize        Int
+  status          ImportStatus @default(PENDING)
+  totalRows       Int          @default(0)
+  processedRows   Int          @default(0)
+  successRows     Int          @default(0)
+  failedRows      Int          @default(0)
+  duplicateRows   Int          @default(0)
+  fieldMapping    Json         // CSV column to object field mapping
+  duplicateHandling String     @default("SKIP") // SKIP, UPDATE, CREATE_NEW
+  ownerId         String
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorLog        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([objectType])
+  @@index([status])
+  @@index([ownerId])
+  @@map("data_imports")
+}
+
+// MASS EMAIL
+model MassEmailJob {
+  id            String   @id @default(uuid())
+  name          String
+  templateId    String?
+  subject       String
+  body          String   @db.Text
+  recipientType String   // Lead, Contact
+  recipientIds  String[] // Specific IDs or filter criteria
+  filterCriteria Json?   // Dynamic filter for recipients
+  status        String   @default("DRAFT") // DRAFT, SCHEDULED, SENDING, COMPLETED, FAILED
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  totalRecipients Int    @default(0)
+  sentCount     Int      @default(0)
+  failedCount   Int      @default(0)
+  openedCount   Int      @default(0)
+  clickedCount  Int      @default(0)
+  bouncedCount  Int      @default(0)
+  ownerId       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([ownerId])
+  @@map("mass_email_jobs")
+}
+
+// WEB-TO-LEAD / WEB-TO-CASE
+model WebForm {
+  id            String   @id @default(uuid())
+  name          String
+  formType      String   // LEAD, CASE
+  description   String?  @db.Text
+  fields        Json     // Form field configuration
+  defaultValues Json?    // Default field values
+  redirectUrl   String?  // URL to redirect after submission
+  notifyEmails  String[] // Emails to notify on submission
+  isActive      Boolean  @default(true)
+  captchaEnabled Boolean @default(true)
+  publicToken   String   @unique @default(uuid()) // Used in public URL
+  submissionCount Int    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  submissions WebFormSubmission[]
+
+  @@map("web_forms")
+}
+
+model WebFormSubmission {
+  id          String   @id @default(uuid())
+  formId      String
+  data        Json     // Submitted form data
+  ipAddress   String?
+  userAgent   String?
+  recordId    String?  // Created Lead or Case ID
+  status      String   @default("PENDING") // PENDING, PROCESSED, FAILED
+  errorMessage String?
+  createdAt   DateTime @default(now())
+
+  form WebForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@index([status])
+  @@map("web_form_submissions")
+}
+
+// CHATTER / FEED
+enum FeedItemType {
+  TEXT_POST
+  LINK_POST
+  CONTENT_POST
+  POLL
+  STATUS_UPDATE
+  RECORD_UPDATE
+  ANNOUNCEMENT
+}
+
+model FeedItem {
+  id          String       @id @default(uuid())
+  type        FeedItemType @default(TEXT_POST)
+  body        String       @db.Text
+  parentId    String?      // Record ID (Lead, Opportunity, etc.) or Group ID
+  parentType  String?      // Lead, Opportunity, Account, Group, User
+  authorId    String
+  linkUrl     String?
+  linkTitle   String?
+  isRichText  Boolean      @default(false)
+  visibility  String       @default("ALL_USERS") // ALL_USERS, INTERNAL_ONLY
+  likeCount   Int          @default(0)
+  commentCount Int         @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  comments  FeedComment[]
+  likes     FeedLike[]
+  mentions  FeedMention[]
+
+  @@index([parentType, parentId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@map("feed_items")
+}
+
+model FeedComment {
+  id        String   @id @default(uuid())
+  feedItemId String
+  body      String   @db.Text
+  authorId  String
+  likeCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  feedItem FeedItem      @relation(fields: [feedItemId], references: [id], onDelete: Cascade)
+  likes    FeedLike[]
+  mentions FeedMention[]
+
+  @@index([feedItemId])
+  @@map("feed_comments")
+}
+
+model FeedLike {
+  id          String   @id @default(uuid())
+  userId      String
+  feedItemId  String?
+  commentId   String?
+  createdAt   DateTime @default(now())
+
+  feedItem FeedItem?    @relation(fields: [feedItemId], references: [id], onDelete: Cascade)
+  comment  FeedComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, feedItemId])
+  @@unique([userId, commentId])
+  @@map("feed_likes")
+}
+
+model FeedMention {
+  id          String   @id @default(uuid())
+  userId      String   // User being mentioned
+  feedItemId  String?
+  commentId   String?
+  createdAt   DateTime @default(now())
+
+  feedItem FeedItem?    @relation(fields: [feedItemId], references: [id], onDelete: Cascade)
+  comment  FeedComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("feed_mentions")
+}
+
+model ChatterGroup {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?  @db.Text
+  isArchived    Boolean  @default(false)
+  isPublic      Boolean  @default(true)
+  ownerId       String
+  memberCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  members GroupMember[]
+
+  @@map("chatter_groups")
+}
+
+model GroupMember {
+  id        String   @id @default(uuid())
+  groupId   String
+  userId    String
+  role      String   @default("MEMBER") // MEMBER, ADMIN
+  joinedAt  DateTime @default(now())
+
+  group ChatterGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+// PORTALS
+model PortalUser {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  hashedPassword String
+  firstName     String
+  lastName      String
+  portalType    String   // PARTNER, CUSTOMER
+  accountId     String?  // Associated account/company
+  contactId     String?  // Associated contact record
+  isActive      Boolean  @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([portalType])
+  @@index([accountId])
+  @@map("portal_users")
+}
+
+model DealRegistration {
+  id              String   @id @default(uuid())
+  partnerUserId   String
+  companyName     String
+  contactName     String
+  contactEmail    String
+  contactPhone    String?
+  dealDescription String   @db.Text
+  estimatedAmount Float
+  expectedCloseDate DateTime
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED, CONVERTED
+  opportunityId   String?  // Created opportunity ID
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewNotes     String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([partnerUserId])
+  @@index([status])
+  @@map("deal_registrations")
+}
+
+// CUSTOM OBJECTS
+model CustomObject {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  label         String
+  pluralLabel   String
+  description   String?  @db.Text
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  fields  CustomField[]
+  records CustomRecord[]
+  layouts PageLayout[]
+
+  @@map("custom_objects")
+}
+
+model CustomField {
+  id              String   @id @default(uuid())
+  objectId        String
+  name            String
+  label           String
+  type            String   // TEXT, NUMBER, DATE, DATETIME, BOOLEAN, PICKLIST, LOOKUP, FORMULA
+  isRequired      Boolean  @default(false)
+  isUnique        Boolean  @default(false)
+  defaultValue    String?
+  helpText        String?
+  picklistValues  String[] // For picklist fields
+  lookupObjectId  String?  // For lookup fields
+  formulaExpression String? // For formula fields
+  maxLength       Int?
+  decimalPlaces   Int?
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  object CustomObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@unique([objectId, name])
+  @@index([objectId])
+  @@map("custom_fields")
+}
+
+model CustomRecord {
+  id        String   @id @default(uuid())
+  objectId  String
+  data      Json     // Field values
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  object CustomObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@index([objectId])
+  @@index([ownerId])
+  @@map("custom_records")
+}
+
+// PAGE LAYOUTS
+model PageLayout {
+  id            String   @id @default(uuid())
+  name          String
+  objectType    String   // Lead, Contact, Opportunity, or CustomObject ID
+  customObjectId String?
+  layoutConfig  Json     // Sections, fields, related lists configuration
+  isDefault     Boolean  @default(false)
+  recordTypeId  String?  // Associated record type
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customObject CustomObject? @relation(fields: [customObjectId], references: [id])
+
+  @@index([objectType])
+  @@map("page_layouts")
+}
+
+// RECORD TYPES
+model RecordType {
+  id          String   @id @default(uuid())
+  name        String
+  objectType  String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([objectType, name])
+  @@map("record_types")
+}
+
+// SHARING RULES
+model SharingRule {
+  id              String   @id @default(uuid())
+  name            String
+  objectType      String
+  description     String?  @db.Text
+  sharedFrom      String   // Role, Group, or User ID
+  sharedFromType  String   // ROLE, PUBLIC_GROUP, USER
+  sharedTo        String   // Role, Group, or User ID
+  sharedToType    String   // ROLE, PUBLIC_GROUP, USER
+  accessLevel     String   // READ, EDIT
+  criteria        Json?    // Criteria-based sharing rules
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([objectType])
+  @@map("sharing_rules")
+}
+
+// REPORTS BUILDER
+enum ReportFormat {
+  TABULAR
+  SUMMARY
+  MATRIX
+}
+
+model Report {
+  id            String       @id @default(uuid())
+  name          String
+  description   String?      @db.Text
+  objectType    String       // Primary object
+  format        ReportFormat @default(TABULAR)
+  columns       Json         // Selected columns
+  filters       Json?        // Filter criteria
+  groupBy       String[]     // Grouping fields
+  sortBy        Json?        // Sort configuration
+  chartConfig   Json?        // Chart visualization settings
+  folderId      String?
+  ownerId       String
+  isPublic      Boolean      @default(false)
+  lastRunAt     DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  folder ReportFolder? @relation(fields: [folderId], references: [id])
+
+  @@index([objectType])
+  @@index([folderId])
+  @@index([ownerId])
+  @@map("reports")
+}
+
+model ReportFolder {
+  id          String   @id @default(uuid())
+  name        String
+  parentId    String?
+  accessLevel String   @default("PRIVATE") // PRIVATE, PUBLIC_READ, PUBLIC_EDIT
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   ReportFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children ReportFolder[] @relation("FolderHierarchy")
+  reports  Report[]
+
+  @@index([parentId])
+  @@map("report_folders")
+}
+
+// CAMPAIGN INFLUENCE / ATTRIBUTION
+model CampaignInfluence {
+  id            String   @id @default(uuid())
+  campaignId    String
+  opportunityId String
+  contactId     String?
+  influencePercent Float @default(0)
+  revenueShare  Float    @default(0)
+  isPrimary     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([campaignId, opportunityId, contactId])
+  @@index([campaignId])
+  @@index([opportunityId])
+  @@map("campaign_influences")
+}
+
+model TouchPoint {
+  id            String   @id @default(uuid())
+  campaignId    String
+  contactId     String
+  leadId        String?
+  touchType     String   // EMAIL_OPEN, EMAIL_CLICK, WEB_VISIT, FORM_SUBMIT, EVENT_ATTENDANCE
+  touchDate     DateTime @default(now())
+  metadata      Json?    // Additional data about the touch
+
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([leadId])
+  @@index([touchDate])
+  @@map("touch_points")
+}
+
+// ============================================
+// FILES / DOCUMENT MANAGEMENT
+// ============================================
+
+model File {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?  @db.Text
+  fileSize      Int
+  fileType      String
+  contentType   String   // MIME type
+  storageUrl    String   // URL or path to file
+  thumbnailUrl  String?
+  isPublic      Boolean  @default(false)
+  ownerId       String
+  folderId      String?
+  version       Int      @default(1)
+  downloadCount Int      @default(0)
+  tags          String[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  folder FileFolder? @relation(fields: [folderId], references: [id])
+  links  FileLink[]
+  versions FileVersion[]
+
+  @@index([ownerId])
+  @@index([folderId])
+  @@index([fileType])
+  @@map("files")
+}
+
+model FileFolder {
+  id          String   @id @default(uuid())
+  name        String
+  parentId    String?
+  ownerId     String
+  isShared    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   FileFolder?  @relation("FileFolderHierarchy", fields: [parentId], references: [id])
+  children FileFolder[] @relation("FileFolderHierarchy")
+  files    File[]
+
+  @@index([parentId])
+  @@index([ownerId])
+  @@map("file_folders")
+}
+
+model FileVersion {
+  id          String   @id @default(uuid())
+  fileId      String
+  version     Int
+  storageUrl  String
+  fileSize    Int
+  uploadedBy  String
+  changeNotes String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+  @@map("file_versions")
+}
+
+model FileLink {
+  id            String   @id @default(uuid())
+  fileId        String
+  linkedToType  String   // Lead, Contact, Opportunity, Case, etc.
+  linkedToId    String
+  createdAt     DateTime @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, linkedToType, linkedToId])
+  @@index([linkedToType, linkedToId])
+  @@map("file_links")
+}
+
+// ============================================
+// CALENDAR
+// ============================================
+
+model CalendarEvent {
+  id              String   @id @default(uuid())
+  subject         String
+  description     String?  @db.Text
+  location        String?
+  startDateTime   DateTime
+  endDateTime     DateTime
+  isAllDay        Boolean  @default(false)
+  isPrivate       Boolean  @default(false)
+  ownerId         String
+  recurrenceRule  String?  // iCal RRULE format
+  recurrenceEndDate DateTime?
+  parentEventId   String?  // For recurring event instances
+  reminderMinutes Int?
+  status          String   @default("CONFIRMED") // CONFIRMED, TENTATIVE, CANCELLED
+  busyStatus      String   @default("BUSY") // FREE, BUSY, OUT_OF_OFFICE
+  relatedToType   String?  // Lead, Contact, Opportunity
+  relatedToId     String?
+  color           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  parentEvent   CalendarEvent?  @relation("EventRecurrence", fields: [parentEventId], references: [id])
+  childEvents   CalendarEvent[] @relation("EventRecurrence")
+  attendees     EventAttendee[]
+
+  @@index([ownerId])
+  @@index([startDateTime])
+  @@index([parentEventId])
+  @@index([relatedToType, relatedToId])
+  @@map("calendar_events")
+}
+
+model EventAttendee {
+  id          String   @id @default(uuid())
+  eventId     String
+  userId      String?  // Internal user
+  email       String   // External or internal email
+  name        String?
+  status      String   @default("PENDING") // PENDING, ACCEPTED, DECLINED, TENTATIVE
+  isRequired  Boolean  @default(true)
+  isOrganizer Boolean  @default(false)
+  respondedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, email])
+  @@map("event_attendees")
+}
+
+// ============================================
+// ORDERS
+// ============================================
+
+enum OrderStatus {
+  DRAFT
+  ACTIVATED
+  FULFILLED
+  CANCELLED
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique @default(uuid())
+  accountId       String
+  contactId       String?
+  opportunityId   String?
+  quoteId         String?
+  contractId      String?
+  status          OrderStatus @default(DRAFT)
+  orderDate       DateTime    @default(now())
+  effectiveDate   DateTime?
+  endDate         DateTime?
+  description     String?     @db.Text
+  subtotal        Float       @default(0)
+  discount        Float       @default(0)
+  tax             Float       @default(0)
+  shippingHandling Float      @default(0)
+  totalAmount     Float       @default(0)
+  billingStreet   String?
+  billingCity     String?
+  billingState    String?
+  billingPostalCode String?
+  billingCountry  String?
+  shippingStreet  String?
+  shippingCity    String?
+  shippingState   String?
+  shippingPostalCode String?
+  shippingCountry String?
+  ownerId         String
+  poNumber        String?     // Purchase Order Number
+  poDate          DateTime?
+  activatedDate   DateTime?
+  activatedBy     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  lineItems    OrderLineItem[]
+  invoices     Invoice[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([ownerId])
+  @@index([orderDate])
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id            String   @id @default(uuid())
+  orderId       String
+  productId     String?
+  productName   String
+  productCode   String?
+  quantity      Int      @default(1)
+  listPrice     Float
+  unitPrice     Float
+  discount      Float    @default(0)
+  totalPrice    Float
+  description   String?  @db.Text
+  startDate     DateTime?
+  endDate       DateTime?
+  serviceDate   DateTime?
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_line_items")
+}
+
+// ============================================
+// INVOICES
+// ============================================
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  SENT
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+  VOID
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  invoiceNumber   String        @unique @default(uuid())
+  accountId       String
+  contactId       String?
+  orderId         String?
+  status          InvoiceStatus @default(DRAFT)
+  invoiceDate     DateTime      @default(now())
+  dueDate         DateTime
+  subtotal        Float         @default(0)
+  discount        Float         @default(0)
+  tax             Float         @default(0)
+  totalAmount     Float         @default(0)
+  amountPaid      Float         @default(0)
+  balance         Float         @default(0)
+  description     String?       @db.Text
+  terms           String?       @db.Text
+  notes           String?       @db.Text
+  billingStreet   String?
+  billingCity     String?
+  billingState    String?
+  billingPostalCode String?
+  billingCountry  String?
+  ownerId         String
+  sentAt          DateTime?
+  paidAt          DateTime?
+  paymentMethod   String?
+  paymentReference String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order     Order?          @relation(fields: [orderId], references: [id])
+  lineItems InvoiceLineItem[]
+  payments  Payment[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([ownerId])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id            String   @id @default(uuid())
+  invoiceId     String
+  productId     String?
+  description   String
+  quantity      Int      @default(1)
+  unitPrice     Float
+  discount      Float    @default(0)
+  totalPrice    Float
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  invoiceId       String
+  amount          Float
+  paymentDate     DateTime @default(now())
+  paymentMethod   String   // CREDIT_CARD, BANK_TRANSFER, CHECK, CASH, OTHER
+  reference       String?  // Transaction ID or check number
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// ============================================
+// ASSETS
+// ============================================
+
+enum AssetStatus {
+  PURCHASED
+  SHIPPED
+  INSTALLED
+  REGISTERED
+  OBSOLETE
+}
+
+model Asset {
+  id              String      @id @default(uuid())
+  name            String
+  serialNumber    String?
+  description     String?     @db.Text
+  status          AssetStatus @default(PURCHASED)
+  accountId       String
+  contactId       String?
+  productId       String?
+  productName     String?
+  quantity        Int         @default(1)
+  price           Float?
+  purchaseDate    DateTime?
+  installDate     DateTime?
+  usageEndDate    DateTime?
+  warrantyEndDate DateTime?
+  parentAssetId   String?     // For asset hierarchies
+  rootAssetId     String?     // Top-level asset
+  ownerId         String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  parentAsset Asset?  @relation("AssetHierarchy", fields: [parentAssetId], references: [id])
+  childAssets Asset[] @relation("AssetHierarchy")
+  cases       AssetCase[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([serialNumber])
+  @@index([productId])
+  @@index([parentAssetId])
+  @@map("assets")
+}
+
+model AssetCase {
+  id        String   @id @default(uuid())
+  assetId   String
+  caseId    String
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, caseId])
+  @@map("asset_cases")
+}
+
+// ============================================
+// ENTITLEMENTS / SLA MANAGEMENT
+// ============================================
+
+enum EntitlementStatus {
+  ACTIVE
+  EXPIRED
+  INACTIVE
+}
+
+model Entitlement {
+  id              String            @id @default(uuid())
+  name            String
+  accountId       String
+  assetId         String?
+  contractId      String?
+  status          EntitlementStatus @default(ACTIVE)
+  startDate       DateTime
+  endDate         DateTime
+  slaProcessId    String?
+  remainingCases  Int?              // Number of cases remaining (-1 for unlimited)
+  remainingWorkOrders Int?          // Number of work orders remaining
+  perIncident     Boolean           @default(false) // Per-incident entitlement
+  description     String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  slaProcess EntitlementProcess? @relation(fields: [slaProcessId], references: [id])
+
+  @@index([accountId])
+  @@index([status])
+  @@index([endDate])
+  @@map("entitlements")
+}
+
+model EntitlementProcess {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?  @db.Text
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entitlements Entitlement[]
+  milestones   EntitlementMilestone[]
+
+  @@map("entitlement_processes")
+}
+
+model EntitlementMilestone {
+  id              String   @id @default(uuid())
+  processId       String
+  name            String
+  description     String?  @db.Text
+  recurrenceType  String   // NO_RECURRENCE, INDEPENDENT, SEQUENTIAL
+  minutesToComplete Int    // Time to complete in minutes
+  startCriteria   Json?    // Criteria for when milestone starts
+  successCriteria Json?    // Criteria for milestone completion
+  violationActions Json?   // Actions when milestone is violated
+  warningActions  Json?    // Actions for warning before violation
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  process EntitlementProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+  @@map("entitlement_milestones")
+}
+
+// ============================================
+// ROLES & HIERARCHY
+// ============================================
+
+model Role {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  label           String
+  description     String?  @db.Text
+  parentRoleId    String?
+  allowForecast   Boolean  @default(false) // Can view forecast
+  caseAccessLevel String   @default("PRIVATE") // PRIVATE, READ_WRITE_TRANSFER, READ_ONLY
+  opportunityAccessLevel String @default("PRIVATE")
+  contactAccessLevel String @default("CONTROLLED_BY_PARENT")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  parentRole  Role?  @relation("RoleHierarchy", fields: [parentRoleId], references: [id])
+  childRoles  Role[] @relation("RoleHierarchy")
+  users       RoleAssignment[]
+
+  @@index([parentRoleId])
+  @@map("roles")
+}
+
+model RoleAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([roleId])
+  @@map("role_assignments")
+}
+
+// ============================================
+// PERMISSION SETS
+// ============================================
+
+model PermissionSet {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  label           String
+  description     String?  @db.Text
+  isCustom        Boolean  @default(true)
+  permissions     Json     // Object and field-level permissions
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  assignments PermissionSetAssignment[]
+
+  @@map("permission_sets")
+}
+
+model PermissionSetAssignment {
+  id              String   @id @default(uuid())
+  userId          String
+  permissionSetId String
+  createdAt       DateTime @default(now())
+
+  permissionSet PermissionSet @relation(fields: [permissionSetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionSetId])
+  @@index([userId])
+  @@map("permission_set_assignments")
+}
+
+// ============================================
+// LIVE CHAT / OMNICHANNEL
+// ============================================
+
+enum ChatStatus {
+  WAITING
+  ACTIVE
+  ENDED
+  TRANSFERRED
+}
+
+model LiveChat {
+  id              String     @id @default(uuid())
+  visitorId       String?    // Portal user or anonymous
+  visitorName     String?
+  visitorEmail    String?
+  agentId         String?    // Assigned agent
+  status          ChatStatus @default(WAITING)
+  channel         String     @default("WEB") // WEB, MOBILE, FACEBOOK, WHATSAPP
+  startedAt       DateTime   @default(now())
+  endedAt         DateTime?
+  waitTime        Int?       // Seconds waited before agent pickup
+  duration        Int?       // Chat duration in seconds
+  caseId          String?    // Created case ID
+  transcript      String?    @db.Text
+  rating          Int?       // 1-5 customer rating
+  ratingComment   String?    @db.Text
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  messages LiveChatMessage[]
+
+  @@index([agentId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("live_chats")
+}
+
+model LiveChatMessage {
+  id        String   @id @default(uuid())
+  chatId    String
+  senderId  String?  // null for system messages
+  senderType String  // VISITOR, AGENT, SYSTEM, BOT
+  content   String   @db.Text
+  messageType String @default("TEXT") // TEXT, FILE, IMAGE, LINK
+  fileUrl   String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  chat LiveChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@map("live_chat_messages")
+}
+
+model OmnichannelPresence {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  status          String   @default("OFFLINE") // ONLINE, AWAY, BUSY, OFFLINE
+  capacity        Int      @default(5) // Max concurrent chats
+  currentLoad     Int      @default(0) // Current active chats
+  channels        String[] // WEB, PHONE, EMAIL, SOCIAL
+  skills          String[] // Support skills for routing
+  lastActivityAt  DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("omnichannel_presence")
+}
+
+model RoutingQueue {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?  @db.Text
+  channel         String   // WEB, PHONE, EMAIL
+  priority        Int      @default(0)
+  routingType     String   @default("QUEUE") // QUEUE, SKILL_BASED, ROUND_ROBIN
+  memberIds       String[] // Agent IDs
+  requiredSkills  String[]
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("routing_queues")
 }
 

@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
           type: 'event',
           timestamp: event.startTime.toISOString(),
           title: event.subject,
-          description: `${event.eventType} • ${new Date(event.startTime).toLocaleString()}`,
+          description: `${event.isAllDay ? 'All Day' : ''} ${new Date(event.startTime).toLocaleString()}${event.location ? ` • ${event.location}` : ''}`,
           user: event.owner,
         });
       });

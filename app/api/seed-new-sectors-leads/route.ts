@@ -74,7 +74,7 @@ export async function GET() {
             data: {
               leadId: lead.id,
               userId: client.users[0]?.id,
-              type: activityData.type,
+              type: activityData.type as any,
               content: activityData.content,
               aiSummary: activityData.aiSummary,
               createdAt: activityData.createdAt,

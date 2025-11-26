@@ -441,8 +441,8 @@ export async function POST(
     const result = await executeWorkflow(
       flow.id,
       objectId,
-      flow.nodes as WorkflowNode[],
-      flow.edges as WorkflowEdge[],
+      flow.nodes as unknown as WorkflowNode[],
+      flow.edges as unknown as WorkflowEdge[],
       flow.objectType,
       session.user.id
     );

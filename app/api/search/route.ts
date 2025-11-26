@@ -32,9 +32,6 @@ export async function GET(req: NextRequest) {
         ],
       },
       include: {
-        client: {
-          select: { name: true },
-        },
         campaign: {
           select: { name: true },
         },
@@ -48,7 +45,7 @@ export async function GET(req: NextRequest) {
         type: 'lead',
         title: lead.fullName,
         subtitle: `${lead.company} • ${lead.title || 'No title'}`,
-        metadata: lead.campaign ? `Campaign: ${lead.campaign.name}` : `Client: ${lead.client.name}`,
+        metadata: lead.campaign ? `Campaign: ${lead.campaign.name}` : '',
       });
     });
 
@@ -64,21 +61,25 @@ export async function GET(req: NextRequest) {
           { department: { contains: searchQuery, mode: 'insensitive' } },
         ],
       },
-      include: {
-        client: {
-          select: { name: true },
-        },
-      },
       take: 10,
     });
 
+    // Fetch account names for contacts
+    const contactClientIds = [...new Set(contacts.map(c => c.clientId))];
+    const contactAccounts = await prisma.clientCompany.findMany({
+      where: { id: { in: contactClientIds } },
+      select: { id: true, name: true },
+    });
+    const contactAccountMap = new Map(contactAccounts.map(a => [a.id, a]));
+
     contacts.forEach((contact) => {
+      const account = contactAccountMap.get(contact.clientId);
       results.push({
         id: contact.id,
         type: 'contact',
         title: `${contact.firstName} ${contact.lastName}`,
         subtitle: `${contact.email} • ${contact.title || 'No title'}`,
-        metadata: `${contact.client.name}${contact.isPrimary ? ' • Primary Contact' : ''}`,
+        metadata: `${account?.name || 'Unknown'}${contact.isPrimary ? ' • Primary Contact' : ''}`,
       });
     });
 
@@ -91,9 +92,6 @@ export async function GET(req: NextRequest) {
         ],
       },
       include: {
-        client: {
-          select: { name: true },
-        },
         contact: {
           select: { firstName: true, lastName: true },
         },
@@ -101,18 +99,27 @@ export async function GET(req: NextRequest) {
       take: 10,
     });
 
+    // Fetch account names for opportunities
+    const oppClientIds = [...new Set(opportunities.map(o => o.clientId))];
+    const oppAccounts = await prisma.clientCompany.findMany({
+      where: { id: { in: oppClientIds } },
+      select: { id: true, name: true },
+    });
+    const oppAccountMap = new Map(oppAccounts.map(a => [a.id, a]));
+
     opportunities.forEach((opp) => {
+      const account = oppAccountMap.get(opp.clientId);
       results.push({
         id: opp.id,
         type: 'opportunity',
         title: opp.name,
         subtitle: `${opp.stage.replace('_', ' ')} • $${opp.amount.toLocaleString()}`,
-        metadata: `${opp.client.name}${opp.contact ? ` • ${opp.contact.firstName} ${opp.contact.lastName}` : ''}`,
+        metadata: `${account?.name || 'Unknown'}${opp.contact ? ` • ${opp.contact.firstName} ${opp.contact.lastName}` : ''}`,
       });
     });
 
-    // Search Clients
-    const clients = await prisma.client.findMany({
+    // Search Accounts (ClientCompany)
+    const accounts = await prisma.clientCompany.findMany({
       where: {
         OR: [
           { name: { contains: searchQuery, mode: 'insensitive' } },
@@ -123,13 +130,13 @@ export async function GET(req: NextRequest) {
       take: 10,
     });
 
-    clients.forEach((client) => {
+    accounts.forEach((account) => {
       results.push({
-        id: client.id,
-        type: 'client',
-        title: client.name,
-        subtitle: client.industry || 'No industry',
-        metadata: client.website || '',
+        id: account.id,
+        type: 'account',
+        title: account.name,
+        subtitle: account.industry || 'No industry',
+        metadata: account.website || '',
       });
     });
 
@@ -139,13 +146,7 @@ export async function GET(req: NextRequest) {
         OR: [
           { name: { contains: searchQuery, mode: 'insensitive' } },
           { description: { contains: searchQuery, mode: 'insensitive' } },
-          { targetPersona: { contains: searchQuery, mode: 'insensitive' } },
         ],
-      },
-      include: {
-        client: {
-          select: { name: true },
-        },
       },
       take: 10,
     });
@@ -156,7 +157,7 @@ export async function GET(req: NextRequest) {
         type: 'campaign',
         title: campaign.name,
         subtitle: `${campaign.status} • ${campaign.channel}`,
-        metadata: campaign.client.name,
+        metadata: '',
       });
     });
 

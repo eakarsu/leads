@@ -210,38 +210,38 @@ export default function LeadDetailPage() {
 
         <Grid container spacing={3}>
           {/* Lead Information */}
-          <Grid item xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
                   Lead Information
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Company
                     </Typography>
                     <Typography variant="body1">{lead.company}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Title
                     </Typography>
                     <Typography variant="body1">{lead.title}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Email
                     </Typography>
                     <Typography variant="body1">{lead.email || 'N/A'}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Phone
                     </Typography>
                     <Typography variant="body1">{lead.phone || 'N/A'}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       LinkedIn
                     </Typography>
@@ -255,7 +255,7 @@ export default function LeadDetailPage() {
                       )}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Source
                     </Typography>
@@ -286,7 +286,7 @@ export default function LeadDetailPage() {
                     Enrichment Data
                   </Typography>
                   <Grid container spacing={2}>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Company Size
                       </Typography>
@@ -294,7 +294,7 @@ export default function LeadDetailPage() {
                         {lead.enrichmentData[0].companySize || 'N/A'}
                       </Typography>
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Industry
                       </Typography>
@@ -302,7 +302,7 @@ export default function LeadDetailPage() {
                         {lead.enrichmentData[0].industry || 'N/A'}
                       </Typography>
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Tech Stack
                       </Typography>
@@ -310,7 +310,7 @@ export default function LeadDetailPage() {
                         {lead.enrichmentData[0].techStack || 'N/A'}
                       </Typography>
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Location
                       </Typography>
@@ -365,7 +365,7 @@ export default function LeadDetailPage() {
           </Grid>
 
           {/* Sidebar */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -481,31 +481,31 @@ export default function LeadDetailPage() {
                 </Alert>
 
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Company Size
                     </Typography>
                     <Typography variant="body1">{enrichmentResult.companySize}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Industry
                     </Typography>
                     <Typography variant="body1">{enrichmentResult.industry}</Typography>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}>
                     <Typography variant="caption" color="text.secondary">
                       Tech Stack
                     </Typography>
                     <Typography variant="body2">{enrichmentResult.techStack}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Location
                     </Typography>
                     <Typography variant="body1">{enrichmentResult.location}</Typography>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}>
                     <Typography variant="caption" color="text.secondary">
                       Decision Maker Relevance
                     </Typography>

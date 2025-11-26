@@ -202,7 +202,7 @@ export default function LeadScoreCard({ leadId }: LeadScoreCardProps) {
           Score Breakdown
         </Typography>
         <Grid container spacing={2} mb={2}>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             <Box>
               <Box display="flex" justifyContent="space-between" mb={0.5}>
                 <Typography variant="caption">Demographic</Typography>
@@ -217,7 +217,7 @@ export default function LeadScoreCard({ leadId }: LeadScoreCardProps) {
               />
             </Box>
           </Grid>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             <Box>
               <Box display="flex" justifyContent="space-between" mb={0.5}>
                 <Typography variant="caption">Behavioral</Typography>
@@ -232,7 +232,7 @@ export default function LeadScoreCard({ leadId }: LeadScoreCardProps) {
               />
             </Box>
           </Grid>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             <Box>
               <Box display="flex" justifyContent="space-between" mb={0.5}>
                 <Typography variant="caption">Engagement</Typography>
@@ -247,7 +247,7 @@ export default function LeadScoreCard({ leadId }: LeadScoreCardProps) {
               />
             </Box>
           </Grid>
-          <Grid item xs={6}>
+          <Grid size={{ xs: 6 }}>
             <Box>
               <Box display="flex" justifyContent="space-between" mb={0.5}>
                 <Typography variant="caption">Firmographic</Typography>

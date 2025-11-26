@@ -46,27 +46,21 @@ export async function PUT(
         ...(role !== undefined && { role }),
         ...(isPrimary !== undefined && { isPrimary }),
       },
-      include: {
-        contact: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            title: true,
-          },
-        },
-        opportunity: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
     });
 
-    return NextResponse.json(updatedRole);
+    // Fetch contact and opportunity data separately
+    const [contact, opportunity] = await Promise.all([
+      prisma.contact.findUnique({
+        where: { id: updatedRole.contactId },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, title: true },
+      }),
+      prisma.opportunity.findUnique({
+        where: { id: updatedRole.opportunityId },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    return NextResponse.json({ ...updatedRole, contact, opportunity });
   } catch (error: any) {
     console.error('Error updating opportunity contact role:', error);
     return NextResponse.json(

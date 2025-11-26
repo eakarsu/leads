@@ -44,6 +44,26 @@ import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
+import DescriptionIcon from '@mui/icons-material/Description';
+import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import SendIcon from '@mui/icons-material/Send';
+import ForumIcon from '@mui/icons-material/Forum';
+import WidgetsIcon from '@mui/icons-material/Widgets';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import WebIcon from '@mui/icons-material/Web';
+import FolderIcon from '@mui/icons-material/Folder';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import DevicesIcon from '@mui/icons-material/Devices';
+import SecurityIcon from '@mui/icons-material/Security';
+import ChatIcon from '@mui/icons-material/Chat';
+import HandshakeIcon from '@mui/icons-material/Handshake';
+import PortalIcon from '@mui/icons-material/AccountBox';
 import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
@@ -65,13 +85,89 @@ const menuItems = [
   { text: 'Tasks', icon: <TaskIcon />, path: '/tasks' },
   { text: 'Contacts', icon: <ContactsIcon />, path: '/contacts' },
   { text: 'Products', icon: <InventoryIcon />, path: '/products' },
-  { text: 'Forecasting', icon: <TrendingUpIcon />, path: '/forecasting' },
-  { text: 'Email Center', icon: <EmailIcon />, path: '/email-center' },
+  { text: 'Calendar', icon: <CalendarMonthIcon />, path: '/calendar' },
+  {
+    text: 'Sales',
+    icon: <RequestQuoteIcon />,
+    path: '/quotes',
+    submenu: [
+      { text: 'Quotes', path: '/quotes' },
+      { text: 'Contracts', path: '/contracts' },
+      { text: 'Orders', path: '/orders' },
+      { text: 'Invoices', path: '/invoices' },
+      { text: 'Forecasting', path: '/forecasting' },
+    ]
+  },
+  {
+    text: 'Service',
+    icon: <SupportAgentIcon />,
+    path: '/cases',
+    submenu: [
+      { text: 'Cases', path: '/cases' },
+      { text: 'Knowledge Base', path: '/knowledge' },
+      { text: 'Entitlements', path: '/entitlements' },
+      { text: 'Assets', path: '/assets' },
+      { text: 'Live Chat', path: '/live-chat' },
+    ]
+  },
+  {
+    text: 'Marketing',
+    icon: <EmailIcon />,
+    path: '/email-center',
+    submenu: [
+      { text: 'Email Center', path: '/email-center' },
+      { text: 'Mass Email', path: '/mass-email' },
+      { text: 'Web Forms', path: '/web-forms' },
+    ]
+  },
+  {
+    text: 'Portals',
+    icon: <PortalIcon />,
+    path: '/partner-portal',
+    submenu: [
+      { text: 'Partner Portal', path: '/partner-portal' },
+      { text: 'Customer Portal', path: '/customer-portal' },
+    ]
+  },
   { text: 'Activities', icon: <TimelineIcon />, path: '/activities' },
-  { text: 'Workflows', icon: <AccountTreeIcon />, path: '/workflows' },
-  { text: 'Process Builder', icon: <ViewKanbanIcon />, path: '/process-builder' },
+  { text: 'Chatter', icon: <ForumIcon />, path: '/chatter' },
+  { text: 'Files', icon: <FolderIcon />, path: '/files' },
+  {
+    text: 'Automation',
+    icon: <AccountTreeIcon />,
+    path: '/workflows',
+    submenu: [
+      { text: 'Workflows', path: '/workflows' },
+      { text: 'Process Builder', path: '/process-builder' },
+    ]
+  },
   { text: 'Einstein AI', icon: <AutoAwesomeIcon />, path: '/einstein' },
-  { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
+  {
+    text: 'Data',
+    icon: <CloudUploadIcon />,
+    path: '/data-import',
+    submenu: [
+      { text: 'Data Import', path: '/data-import' },
+      { text: 'Custom Objects', path: '/custom-objects' },
+    ]
+  },
+  {
+    text: 'Reports',
+    icon: <AssessmentIcon />,
+    path: '/reports',
+    submenu: [
+      { text: 'All Reports', path: '/reports' },
+      { text: 'Create Report', path: '/report-builder' },
+    ]
+  },
+  {
+    text: 'Admin',
+    icon: <SecurityIcon />,
+    path: '/roles',
+    submenu: [
+      { text: 'Roles & Hierarchy', path: '/roles' },
+    ]
+  },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
 

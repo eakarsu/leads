@@ -570,7 +570,7 @@ Researching online, ready to buy now`
               startIcon={<CloudUploadIcon />}
               onClick={() => setImportDialog(true)}
             >
-              Import Seed Data
+              Generate Demo Data
             </Button>
             <Button
               variant="contained"
@@ -922,13 +922,13 @@ Just paste the text and click "Parse with AI"!`}
           </DialogActions>
         </Dialog>
 
-        {/* Import Seed Data Dialog */}
+        {/* Generate Demo Data Dialog */}
         <Dialog open={importDialog} onClose={() => setImportDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Import Seed Data</DialogTitle>
+          <DialogTitle>Generate Demo Data</DialogTitle>
           <DialogContent>
             <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Alert severity="info">
-                This will generate realistic test data for all CRM modules (Clients, Campaigns, Leads, Contacts, Opportunities, Tasks, Products, Activities, Emails, Workflows) based on the selected business sector.
+                This will generate realistic demo/test data for all CRM modules (Clients, Campaigns, Leads, Contacts, Opportunities, Tasks, Products, Activities, Emails, Workflows) based on the selected business sector. Use this for demos and testing purposes.
               </Alert>
 
               <TextField
@@ -969,7 +969,7 @@ Just paste the text and click "Parse with AI"!`}
               />
 
               <Alert severity="warning">
-                This will create approximately {importCount * 10} total records across all modules. This operation may take a few seconds.
+                This will create approximately {importCount * 10} total demo records across all modules. This operation may take a few seconds.
               </Alert>
             </Box>
           </DialogContent>
@@ -983,7 +983,7 @@ Just paste the text and click "Parse with AI"!`}
               disabled={importing || !importSector}
               startIcon={importing ? <CircularProgress size={20} /> : <CloudUploadIcon />}
             >
-              {importing ? 'Importing...' : 'Import Data'}
+              {importing ? 'Generating...' : 'Generate Data'}
             </Button>
           </DialogActions>
         </Dialog>

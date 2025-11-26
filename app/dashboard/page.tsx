@@ -137,7 +137,7 @@ export default function DashboardPage() {
 
         {/* Stats Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Card
               sx={{
                 cursor: 'pointer',
@@ -161,7 +161,7 @@ export default function DashboardPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Card
               sx={{
                 cursor: 'pointer',
@@ -188,7 +188,7 @@ export default function DashboardPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Card
               sx={{
                 cursor: 'pointer',
@@ -215,7 +215,7 @@ export default function DashboardPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Card
               sx={{
                 cursor: 'pointer',
@@ -339,7 +339,7 @@ export default function DashboardPage() {
 
         {/* Recent Activities and Top Campaigns */}
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -367,7 +367,7 @@ export default function DashboardPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>

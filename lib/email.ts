@@ -25,7 +25,7 @@ export async function sendEmail(params: SendEmailParams) {
       html: params.html,
       cc: params.cc ? (Array.isArray(params.cc) ? params.cc : [params.cc]) : undefined,
       bcc: params.bcc ? (Array.isArray(params.bcc) ? params.bcc : [params.bcc]) : undefined,
-      reply_to: params.replyTo,
+      replyTo: params.replyTo,
       attachments: params.attachments,
     });
 

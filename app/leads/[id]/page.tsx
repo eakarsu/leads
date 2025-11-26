@@ -398,7 +398,7 @@ export default function LeadDetailPageFull() {
 
         <Grid container spacing={3}>
           {/* Main Content */}
-          <Grid item xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             {/* Lead Info Card */}
             <Card sx={{ mb: 3 }}>
               <CardContent>
@@ -406,31 +406,31 @@ export default function LeadDetailPageFull() {
                   Lead Information
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Company
                     </Typography>
                     <Typography variant="body1">{lead.company}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Title
                     </Typography>
                     <Typography variant="body1">{lead.title}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Email
                     </Typography>
                     <Typography variant="body1">{lead.email || 'N/A'}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Phone
                     </Typography>
                     <Typography variant="body1">{lead.phone || 'N/A'}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       LinkedIn
                     </Typography>
@@ -444,7 +444,7 @@ export default function LeadDetailPageFull() {
                       )}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Source
                     </Typography>
@@ -463,7 +463,7 @@ export default function LeadDetailPageFull() {
                   </Typography>
                   <Grid container spacing={2}>
                     {Object.entries(lead.customFields).map(([key, value]) => (
-                      <Grid item xs={12} sm={6} key={key}>
+                      <Grid size={{ xs: 12, sm: 6 }} key={key}>
                         <Typography variant="caption" color="text.secondary">
                           {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                         </Typography>
@@ -506,7 +506,7 @@ export default function LeadDetailPageFull() {
                     Enrichment Data
                   </Typography>
                   <Grid container spacing={2}>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Company Size
                       </Typography>
@@ -514,7 +514,7 @@ export default function LeadDetailPageFull() {
                         {lead.enrichmentData[0].companySize || 'N/A'}
                       </Typography>
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Industry
                       </Typography>
@@ -522,7 +522,7 @@ export default function LeadDetailPageFull() {
                         {lead.enrichmentData[0].industry || 'N/A'}
                       </Typography>
                     </Grid>
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                       <Typography variant="caption" color="text.secondary">
                         Tech Stack
                       </Typography>
@@ -530,7 +530,7 @@ export default function LeadDetailPageFull() {
                         {lead.enrichmentData[0].techStack || 'N/A'}
                       </Typography>
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="caption" color="text.secondary">
                         Location
                       </Typography>
@@ -621,7 +621,7 @@ export default function LeadDetailPageFull() {
           </Grid>
 
           {/* Sidebar */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -661,12 +661,12 @@ export default function LeadDetailPageFull() {
           </Grid>
 
           {/* Lead Score Card */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <LeadScoreCard leadId={params.id as string} />
           </Grid>
 
           {/* Notes Section */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <NotesSection
               leadId={params.id as string}
               currentUserId={lead?.owner?.id}
@@ -674,7 +674,7 @@ export default function LeadDetailPageFull() {
           </Grid>
 
           {/* Attachments Section */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <AttachmentsSection
               leadId={params.id as string}
               currentUserId={lead?.owner?.id}
@@ -682,12 +682,12 @@ export default function LeadDetailPageFull() {
           </Grid>
 
           {/* Activity Timeline */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <ActivityTimeline leadId={params.id as string} />
           </Grid>
 
           {/* Field History */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <FieldHistorySection objectType="Lead" objectId={params.id as string} />
           </Grid>
         </Grid>
@@ -766,31 +766,31 @@ export default function LeadDetailPageFull() {
                   This data is inferred by AI. Please verify before use.
                 </Alert>
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Company Size
                     </Typography>
                     <Typography variant="body1">{enrichmentResult.companySize}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Industry
                     </Typography>
                     <Typography variant="body1">{enrichmentResult.industry}</Typography>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}>
                     <Typography variant="caption" color="text.secondary">
                       Tech Stack
                     </Typography>
                     <Typography variant="body2">{enrichmentResult.techStack}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">
                       Location
                     </Typography>
                     <Typography variant="body1">{enrichmentResult.location}</Typography>
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={{ xs: 12 }}>
                     <Typography variant="caption" color="text.secondary">
                       Decision Maker Relevance
                     </Typography>
@@ -801,7 +801,7 @@ export default function LeadDetailPageFull() {
 
                   {enrichmentResult.additionalInsights && Object.keys(enrichmentResult.additionalInsights).length > 0 && (
                     <>
-                      <Grid item xs={12}>
+                      <Grid size={{ xs: 12 }}>
                         <Divider sx={{ my: 1 }}>
                           <Typography variant="caption" color="text.secondary">
                             Additional Insights
@@ -809,7 +809,7 @@ export default function LeadDetailPageFull() {
                         </Divider>
                       </Grid>
                       {Object.entries(enrichmentResult.additionalInsights).map(([key, value]) => (
-                        <Grid item xs={6} key={key}>
+                        <Grid size={{ xs: 6 }} key={key}>
                           <Typography variant="caption" color="text.secondary">
                             {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                           </Typography>

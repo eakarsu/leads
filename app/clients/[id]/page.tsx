@@ -186,7 +186,7 @@ export default function ClientDetailPage() {
 
         <Grid container spacing={3}>
           {/* Client Info */}
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -299,7 +299,7 @@ export default function ClientDetailPage() {
           </Grid>
 
           {/* Campaigns */}
-          <Grid item xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>

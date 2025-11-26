@@ -336,7 +336,7 @@ export default function OpportunityDetailPage() {
         )}
 
         <Grid container spacing={3}>
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -358,7 +358,7 @@ export default function OpportunityDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -366,13 +366,13 @@ export default function OpportunityDetailPage() {
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Client
                     </Typography>
                     <Typography variant="body1">{opportunity.client.name}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Contact
                     </Typography>
@@ -382,7 +382,7 @@ export default function OpportunityDetailPage() {
                         : '-'}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Stage
                     </Typography>
@@ -393,13 +393,13 @@ export default function OpportunityDetailPage() {
                       sx={{ mt: 0.5 }}
                     />
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Owner
                     </Typography>
                     <Typography variant="body1">{opportunity.owner.name}</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Amount
                     </Typography>
@@ -407,13 +407,13 @@ export default function OpportunityDetailPage() {
                       {formatCurrency(opportunity.amount)}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Probability
                     </Typography>
                     <Typography variant="h6">{opportunity.probability}%</Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Weighted Value
                     </Typography>
@@ -423,7 +423,7 @@ export default function OpportunityDetailPage() {
                       )}
                     </Typography>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
                       Expected Close Date
                     </Typography>
@@ -432,7 +432,7 @@ export default function OpportunityDetailPage() {
                     </Typography>
                   </Grid>
                   {opportunity.closedDate && (
-                    <Grid item xs={6}>
+                    <Grid size={{ xs: 6 }}>
                       <Typography variant="body2" color="text.secondary">
                         Closed Date
                       </Typography>
@@ -446,7 +446,7 @@ export default function OpportunityDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -467,7 +467,7 @@ export default function OpportunityDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -518,7 +518,7 @@ export default function OpportunityDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -559,7 +559,7 @@ export default function OpportunityDetailPage() {
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -592,7 +592,7 @@ export default function OpportunityDetailPage() {
           </Grid>
 
           {/* Email Section */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <EmailSection
               opportunityId={id}
               contactId={opportunity?.contact?.id}
@@ -601,7 +601,7 @@ export default function OpportunityDetailPage() {
           </Grid>
 
           {/* Notes Section */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <NotesSection
               opportunityId={id}
               currentUserId={opportunity?.owner.id}
@@ -609,7 +609,7 @@ export default function OpportunityDetailPage() {
           </Grid>
 
           {/* Attachments Section */}
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <AttachmentsSection
               opportunityId={id}
               currentUserId={opportunity?.owner.id}
@@ -617,7 +617,7 @@ export default function OpportunityDetailPage() {
           </Grid>
 
           {/* Activity Timeline */}
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <ActivityTimeline opportunityId={id} />
           </Grid>
         </Grid>

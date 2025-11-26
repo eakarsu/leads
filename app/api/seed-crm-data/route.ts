@@ -470,7 +470,7 @@ export async function GET() {
             contactId: contact.id,
             ownerId: user.id,
             name: template.name,
-            stage,
+            stage: stage as any,
             amount: template.amount,
             probability,
             expectedCloseDate,

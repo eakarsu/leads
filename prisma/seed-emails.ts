@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma';
+import { EmailStatus, Prisma } from '@prisma/client';
 
 async function main() {
   console.log('📧 Seeding email data...');
@@ -209,8 +210,16 @@ ${user.name}`,
   }
 
   console.log(`Creating ${emails.length} email records...`);
+  // Filter out emails with null toAddress and cast to proper type
+  const validEmails = emails
+    .filter((e) => e.toAddress !== null)
+    .map((e) => ({
+      ...e,
+      toAddress: e.toAddress as string,
+      status: e.status as EmailStatus,
+    })) as Prisma.EmailCreateManyInput[];
   await prisma.email.createMany({
-    data: emails,
+    data: validEmails,
   });
 
   console.log(`✅ Successfully created ${emails.length} email records`);
