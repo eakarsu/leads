@@ -64,6 +64,13 @@ import SecurityIcon from '@mui/icons-material/Security';
 import ChatIcon from '@mui/icons-material/Chat';
 import HandshakeIcon from '@mui/icons-material/Handshake';
 import PortalIcon from '@mui/icons-material/AccountBox';
+import EventIcon from '@mui/icons-material/Event';
+import RouteIcon from '@mui/icons-material/Route';
+import PollIcon from '@mui/icons-material/Poll';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import GavelIcon from '@mui/icons-material/Gavel';
+import SyncIcon from '@mui/icons-material/Sync';
+import CategoryIcon from '@mui/icons-material/Category';
 import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
@@ -96,6 +103,7 @@ const menuItems = [
       { text: 'Orders', path: '/orders' },
       { text: 'Invoices', path: '/invoices' },
       { text: 'Forecasting', path: '/forecasting' },
+      { text: 'CPQ', path: '/cpq' },
     ]
   },
   {
@@ -108,6 +116,7 @@ const menuItems = [
       { text: 'Entitlements', path: '/entitlements' },
       { text: 'Assets', path: '/assets' },
       { text: 'Live Chat', path: '/live-chat' },
+      { text: 'Service Contracts', path: '/service-contracts' },
     ]
   },
   {
@@ -118,6 +127,9 @@ const menuItems = [
       { text: 'Email Center', path: '/email-center' },
       { text: 'Mass Email', path: '/mass-email' },
       { text: 'Web Forms', path: '/web-forms' },
+      { text: 'Journeys', path: '/journeys' },
+      { text: 'Marketing Events', path: '/marketing-events' },
+      { text: 'Surveys', path: '/surveys' },
     ]
   },
   {
@@ -158,6 +170,7 @@ const menuItems = [
     submenu: [
       { text: 'All Reports', path: '/reports' },
       { text: 'Create Report', path: '/report-builder' },
+      { text: 'Scheduled Reports', path: '/scheduled-reports' },
     ]
   },
   {
@@ -168,7 +181,15 @@ const menuItems = [
       { text: 'Roles & Hierarchy', path: '/roles' },
     ]
   },
-  { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
+  {
+    text: 'Settings',
+    icon: <SettingsIcon />,
+    path: '/settings',
+    submenu: [
+      { text: 'General Settings', path: '/settings' },
+      { text: 'Email & Calendar Sync', path: '/sync-settings' },
+    ]
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
