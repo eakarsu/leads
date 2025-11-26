@@ -127,6 +127,7 @@ model User {
   createdNotes     Note[]           @relation("CreatedNotes")
   uploadedAttachments Attachment[]  @relation("UploadedAttachments")
   notifications    Notification[]
+  createdProcessFlows ProcessFlow[] @relation("CreatedProcessFlows")
 
   @@index([clientId])
   @@map("users")
@@ -761,3 +762,104 @@ model Notification {
   @@index([createdAt])
   @@map("notifications")
 }
+
+// Process Builder - Visual Workflows
+model ProcessFlow {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  objectType  String   // Lead, Contact, Opportunity, etc.
+  nodes       Json     // Visual flow nodes (triggers, conditions, actions)
+  edges       Json     // Connections between nodes
+  isActive    Boolean  @default(false)
+  version     Int      @default(1)
+  createdBy   String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  creator User @relation("CreatedProcessFlows", fields: [createdBy], references: [id])
+  executions ProcessFlowExecution[]
+
+  @@index([objectType])
+  @@index([isActive])
+  @@index([createdBy])
+  @@map("process_flows")
+}
+
+// Track execution of process flows
+model ProcessFlowExecution {
+  id            String   @id @default(uuid())
+  processFlowId String
+  objectId      String   // ID of the record that triggered the flow
+  status        String   // success, failed, running
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  error         String?  @db.Text
+  executionLog  Json     // Log of each step executed
+
+  processFlow ProcessFlow @relation(fields: [processFlowId], references: [id], onDelete: Cascade)
+
+  @@index([processFlowId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("process_flow_executions")
+}
+
+// Einstein AI - Predictions & Forecasts
+model AIPrediction {
+  id             String   @id @default(uuid())
+  predictionType String   // lead_score, deal_forecast, churn_risk, etc.
+  objectType     String   // Lead, Opportunity, Contact
+  objectId       String
+  prediction     Json     // Prediction data (score, probability, recommendations)
+  confidence     Float    // 0-100%
+  reasoning      String?  @db.Text  // AI explanation
+  modelVersion   String   @default("1.0")
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime? // When prediction becomes stale
+
+  @@index([objectType, objectId])
+  @@index([predictionType])
+  @@index([createdAt])
+  @@map("ai_predictions")
+}
+
+// Revenue Forecasting
+model RevenueForecast {
+  id           String   @id @default(uuid())
+  period       String   // 2024-Q1, 2024-12, etc.
+  forecastType String   // monthly, quarterly, yearly
+  predictedAmount Float
+  actualAmount Float?
+  confidence   Float
+  breakdown    Json     // By rep, by stage, by product
+  generatedBy  String   // AI or manual
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([period])
+  @@index([forecastType])
+  @@map("revenue_forecasts")
+}
+
+// AI Insights & Recommendations
+model AIInsight {
+  id          String   @id @default(uuid())
+  insightType String   // opportunity_at_risk, best_time_to_contact, upsell_opportunity, etc.
+  title       String
+  description String   @db.Text
+  objectType  String   // Lead, Opportunity, Contact, Deal
+  objectId    String
+  priority    String   // high, medium, low
+  actionItems Json     // Recommended actions
+  dismissed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime? // When insight becomes irrelevant
+
+  @@index([objectType, objectId])
+  @@index([insightType])
+  @@index([priority, dismissed])
+  @@index([createdAt])
+  @@map("ai_insights")
+}
+

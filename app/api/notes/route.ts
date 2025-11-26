@@ -48,13 +48,16 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Check for internal workflow header OR regular session auth
+    const isInternalWorkflow = req.headers.get('x-workflow-internal') === 'true';
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+
+    if (!isInternalWorkflow && !session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await req.json();
-    const { content, contactId, leadId, opportunityId } = body;
+    const { content, contactId, leadId, opportunityId, createdBy } = body;
 
     if (!content || content.trim() === '') {
       return NextResponse.json(
@@ -63,10 +66,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Use provided createdBy for internal workflows, otherwise use session user
+    let userId = isInternalWorkflow ? (createdBy || session?.user?.id) : session?.user?.id;
+
+    // For internal workflows without a user, try to get the first admin user as fallback
+    if (!userId && isInternalWorkflow) {
+      const systemUser = await prisma.user.findFirst({
+        where: { role: 'ADMIN' },
+        select: { id: true },
+      });
+      userId = systemUser?.id;
+    }
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
     const note = await prisma.note.create({
       data: {
         content,
-        createdBy: session.user.id,
+        createdBy: userId,
         contactId: contactId || null,
         leadId: leadId || null,
         opportunityId: opportunityId || null,

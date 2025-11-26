@@ -43,6 +43,7 @@ import ViewKanbanIcon from '@mui/icons-material/ViewKanban';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
@@ -68,6 +69,8 @@ const menuItems = [
   { text: 'Email Center', icon: <EmailIcon />, path: '/email-center' },
   { text: 'Activities', icon: <TimelineIcon />, path: '/activities' },
   { text: 'Workflows', icon: <AccountTreeIcon />, path: '/workflows' },
+  { text: 'Process Builder', icon: <ViewKanbanIcon />, path: '/process-builder' },
+  { text: 'Einstein AI', icon: <AutoAwesomeIcon />, path: '/einstein' },
   { text: 'Reports', icon: <AssessmentIcon />, path: '/reports' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];

@@ -18,6 +18,7 @@ import {
   Divider,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
+import NextBestActions from '@/components/NextBestActions';
 import BusinessIcon from '@mui/icons-material/Business';
 import CampaignIcon from '@mui/icons-material/Campaign';
 import PeopleIcon from '@mui/icons-material/People';
@@ -244,6 +245,11 @@ export default function DashboardPage() {
             </Card>
           </Grid>
         </Grid>
+
+        {/* Einstein Next Best Actions */}
+        <Box sx={{ mb: 4 }}>
+          <NextBestActions autoLoad={true} />
+        </Box>
 
         {/* AI Insights Section */}
         <Card sx={{ mb: 4 }}>
