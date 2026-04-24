@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 // GET - List invoices
 export async function GET(request: NextRequest) {
@@ -10,6 +11,8 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(request);
 
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get('accountId');
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
       whereClause.orderId = orderId;
     }
 
+    const total = await prisma.invoice.count({ where: whereClause });
+
     const invoices = await prisma.invoice.findMany({
       where: whereClause,
       include: {
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
           orderBy: { paymentDate: 'desc' },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for invoices
@@ -67,7 +72,7 @@ export async function GET(request: NextRequest) {
       totalOutstanding: invoicesWithAccounts.reduce((sum, i) => sum + ((typeof i.totalAmount === 'number' ? i.totalAmount : 0) - (typeof i.amountPaid === 'number' ? i.amountPaid : 0)), 0),
     };
 
-    return NextResponse.json({ invoices: invoicesWithAccounts, stats });
+    return NextResponse.json(buildPaginatedResponse(invoicesWithAccounts, total, paginationParams));
   } catch (error) {
     console.error('Error fetching invoices:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

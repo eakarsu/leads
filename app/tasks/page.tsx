@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Box,
@@ -12,10 +12,8 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Chip,
-  CircularProgress,
   Alert,
   Dialog,
   DialogTitle,
@@ -27,20 +25,20 @@ import {
   Tabs,
   Tab,
   IconButton,
-  Badge,
   Grid,
   Divider,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-// Temporarily disabled due to date-fns compatibility issue
-// import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-// import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-// import { DateCalendar } from '@mui/x-date-pickers/DateCalendar';
-// import { PickersDay, PickersDayProps } from '@mui/x-date-pickers/PickersDay';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Task {
   id: string;
@@ -71,14 +69,24 @@ interface Task {
   } | null;
 }
 
+const columns: Column[] = [
+  { id: 'subject', label: 'Subject' },
+  { id: 'dueDate', label: 'Due Date' },
+  { id: 'status', label: 'Status' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'assignee', label: 'Assigned To', sortable: false },
+  { id: 'relatedTo', label: 'Related To', sortable: false },
+  { id: 'actions', label: 'Actions', sortable: false, align: 'center' },
+];
+
 export default function TasksPage() {
   const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+
   const [users, setUsers] = useState<any[]>([]);
-  const [contacts, setContacts] = useState<any[]>([]);
-  const [opportunities, setOpportunities] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [contactsList, setContactsList] = useState<any[]>([]);
+  const [opportunitiesList, setOpportunitiesList] = useState<any[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -87,6 +95,10 @@ export default function TasksPage() {
   const [priorityFilter, setPriorityFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+
+  // Sort state
+  const [sortBy, setSortByState] = useState('createdAt');
+  const [sortOrder, setSortOrderState] = useState<'asc' | 'desc'>('desc');
 
   const [formData, setFormData] = useState({
     subject: '',
@@ -100,36 +112,36 @@ export default function TasksPage() {
     relatedTo: '',
   });
 
+  // Build extra params from filters
+  const extraParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    if (statusFilter) params.status = statusFilter;
+    if (priorityFilter) params.priority = priorityFilter;
+    if (assigneeFilter) params.assignedTo = assigneeFilter;
+    return params;
+  }, [statusFilter, priorityFilter, assigneeFilter]);
+
+  const {
+    data: tasks,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Task>({
+    url: '/api/tasks',
+    defaultSortBy: sortBy,
+    defaultSortOrder: sortOrder,
+    extraParams,
+  });
+
   useEffect(() => {
-    fetchTasks();
     fetchUsers();
     fetchContacts();
     fetchOpportunities();
   }, []);
-
-  useEffect(() => {
-    fetchTasks();
-  }, [statusFilter, priorityFilter, assigneeFilter]);
-
-  const fetchTasks = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter) params.append('status', statusFilter);
-      if (priorityFilter) params.append('priority', priorityFilter);
-      if (assigneeFilter) params.append('assignedTo', assigneeFilter);
-
-      const url = `/api/tasks${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch tasks');
-      const data = await response.json();
-      setTasks(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchUsers = async () => {
     try {
@@ -147,7 +159,7 @@ export default function TasksPage() {
       const response = await fetch('/api/contacts');
       if (!response.ok) throw new Error('Failed to fetch contacts');
       const data = await response.json();
-      setContacts(data);
+      setContactsList(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching contacts:', err);
     }
@@ -158,10 +170,17 @@ export default function TasksPage() {
       const response = await fetch('/api/opportunities');
       if (!response.ok) throw new Error('Failed to fetch opportunities');
       const data = await response.json();
-      setOpportunities(data);
+      setOpportunitiesList(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching opportunities:', err);
     }
+  };
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByState(col);
+    setSortOrderState(newOrder);
+    setSort(col, newOrder);
   };
 
   const handleViewTask = (task: Task) => {
@@ -206,6 +225,7 @@ export default function TasksPage() {
         });
 
         if (!response.ok) throw new Error('Failed to update task');
+        toast.showSuccess('Task updated successfully');
       } else {
         // Create new task
         const response = await fetch('/api/tasks', {
@@ -225,6 +245,7 @@ export default function TasksPage() {
         });
 
         if (!response.ok) throw new Error('Failed to create task');
+        toast.showSuccess('Task created successfully');
       }
 
       setOpenDialog(false);
@@ -240,24 +261,30 @@ export default function TasksPage() {
         opportunityId: '',
         relatedTo: '',
       });
-      fetchTasks();
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
   const handleDeleteTask = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: 'DELETE',
-      });
-
+      const response = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete task');
-      fetchTasks();
+      toast.showSuccess('Task deleted successfully');
+      setOpenViewDialog(false);
+      setSelectedTask(null);
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
@@ -312,50 +339,40 @@ export default function TasksPage() {
     });
   };
 
-  // Temporarily disabled due to date-fns compatibility issue
-  // const ServerDay = (props: PickersDayProps<Date>) => {
-  //   const { day, ...other } = props;
-  //   const tasksForDay = getTasksForDate(day);
-
-  //   return (
-  //     <Badge
-  //       key={day.toString()}
-  //       overlap="circular"
-  //       badgeContent={tasksForDay.length > 0 ? tasksForDay.length : undefined}
-  //       color="primary"
-  //     >
-  //       <PickersDay {...other} day={day} />
-  //     </Badge>
-  //   );
-  // };
-
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
-    );
-  }
-
   const selectedDateTasks = selectedDate ? getTasksForDate(selectedDate) : [];
+
+  const exportData = useMemo(() => {
+    return tasks.map((task) => ({
+      Subject: task.subject,
+      'Due Date': task.dueDate ? formatDate(task.dueDate) : '',
+      Status: task.status.replace('_', ' '),
+      Priority: task.priority,
+      'Assigned To': task.assignee.name,
+      'Related To': task.opportunity
+        ? task.opportunity.name
+        : task.contact
+        ? `${task.contact.firstName} ${task.contact.lastName}`
+        : task.relatedTo || '',
+    }));
+  }, [tasks]);
 
   return (
     <DashboardLayout>
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Tasks</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              setSelectedTask(null);
-              setFormData({
-                subject: '',
-                description: '',
-                dueDate: '',
-                status: 'NOT_STARTED',
+          <Box display="flex" gap={1} alignItems="center">
+            <ExportToolbar data={exportData} filename="tasks" title="Tasks" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setSelectedTask(null);
+                setFormData({
+                  subject: '',
+                  description: '',
+                  dueDate: '',
+                  status: 'NOT_STARTED',
                   priority: 'MEDIUM',
                   assignedTo: '',
                   contactId: '',
@@ -367,10 +384,11 @@ export default function TasksPage() {
             >
               New Task
             </Button>
+          </Box>
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
         )}
@@ -446,84 +464,93 @@ export default function TasksPage() {
 
             <Card>
               <CardContent>
-                <TableContainer component={Paper} elevation={0}>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Subject</TableCell>
-                        <TableCell>Due Date</TableCell>
-                        <TableCell>Status</TableCell>
-                        <TableCell>Priority</TableCell>
-                        <TableCell>Assigned To</TableCell>
-                        <TableCell>Related To</TableCell>
-                        <TableCell align="center">Actions</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {tasks.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} align="center">
-                            <Typography color="text.secondary">
-                              No tasks found. Create your first task!
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        tasks.map((task) => (
-                          <TableRow
-                            key={task.id}
-                            hover
-                            sx={{ cursor: 'pointer' }}
-                            onClick={() => handleViewTask(task)}
-                          >
-                            <TableCell>{task.subject}</TableCell>
-                            <TableCell>{formatDate(task.dueDate)}</TableCell>
-                            <TableCell>
-                              <Chip
-                                label={task.status.replace('_', ' ')}
-                                size="small"
-                                color={getStatusColor(task.status) as any}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Chip
-                                label={task.priority}
-                                size="small"
-                                color={getPriorityColor(task.priority) as any}
-                              />
-                            </TableCell>
-                            <TableCell>{task.assignee.name}</TableCell>
-                            <TableCell>
-                              {task.opportunity
-                                ? task.opportunity.name
-                                : task.contact
-                                ? `${task.contact.firstName} ${task.contact.lastName}`
-                                : task.relatedTo || '-'}
-                            </TableCell>
-                            <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleEditTask(task)}
-                                title="Edit"
-                                color="primary"
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleDeleteTask(task.id)}
-                                title="Delete"
-                                color="error"
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
+                {loading ? (
+                  <TableSkeleton rows={5} columns={7} />
+                ) : (
+                  <TableContainer component={Paper} elevation={0}>
+                    <Table>
+                      <SortableTableHead
+                        columns={columns}
+                        sortBy={sortBy}
+                        sortOrder={sortOrder}
+                        onSort={handleSort}
+                      />
+                      <TableBody>
+                        {tasks.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} align="center">
+                              <Typography color="text.secondary">
+                                No tasks found. Create your first task!
+                              </Typography>
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                        ) : (
+                          tasks.map((task) => (
+                            <TableRow
+                              key={task.id}
+                              hover
+                              sx={{
+                                cursor: 'pointer',
+                                '&:hover': { backgroundColor: 'action.hover' },
+                              }}
+                              onClick={() => handleViewTask(task)}
+                            >
+                              <TableCell>{task.subject}</TableCell>
+                              <TableCell>{formatDate(task.dueDate)}</TableCell>
+                              <TableCell>
+                                <Chip
+                                  label={task.status.replace('_', ' ')}
+                                  size="small"
+                                  color={getStatusColor(task.status) as any}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Chip
+                                  label={task.priority}
+                                  size="small"
+                                  color={getPriorityColor(task.priority) as any}
+                                />
+                              </TableCell>
+                              <TableCell>{task.assignee.name}</TableCell>
+                              <TableCell>
+                                {task.opportunity
+                                  ? task.opportunity.name
+                                  : task.contact
+                                  ? `${task.contact.firstName} ${task.contact.lastName}`
+                                  : task.relatedTo || '-'}
+                              </TableCell>
+                              <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleEditTask(task)}
+                                  title="Edit"
+                                  color="primary"
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  title="Delete"
+                                  color="error"
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+                <PaginationControls
+                  page={pagination.page}
+                  pageSize={pagination.pageSize}
+                  totalItems={pagination.totalItems}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                />
               </CardContent>
             </Card>
           </>
@@ -536,15 +563,6 @@ export default function TasksPage() {
                   <Typography variant="h6" color="text.secondary" align="center" sx={{ py: 8 }}>
                     Calendar view temporarily unavailable
                   </Typography>
-                  {/* <LocalizationProvider dateAdapter={AdapterDateFns}>
-                    <DateCalendar
-                      value={selectedDate}
-                      onChange={(newValue) => setSelectedDate(newValue)}
-                      slots={{
-                        day: ServerDay,
-                      }}
-                    />
-                  </LocalizationProvider> */}
                 </CardContent>
               </Card>
             </Grid>
@@ -585,6 +603,7 @@ export default function TasksPage() {
           </Grid>
         )}
 
+        {/* Create/Edit Task Dialog */}
         <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
           <DialogTitle>{selectedTask ? 'Edit Task' : 'Create New Task'}</DialogTitle>
           <DialogContent>
@@ -666,7 +685,7 @@ export default function TasksPage() {
                 <MenuItem value="">
                   <em>None</em>
                 </MenuItem>
-                {contacts.map((contact) => (
+                {contactsList.map((contact) => (
                   <MenuItem key={contact.id} value={contact.id}>
                     {contact.firstName} {contact.lastName}
                   </MenuItem>
@@ -683,7 +702,7 @@ export default function TasksPage() {
                 <MenuItem value="">
                   <em>None</em>
                 </MenuItem>
-                {opportunities.map((opp) => (
+                {opportunitiesList.map((opp) => (
                   <MenuItem key={opp.id} value={opp.id}>
                     {opp.name}
                   </MenuItem>
@@ -711,6 +730,7 @@ export default function TasksPage() {
           </DialogActions>
         </Dialog>
 
+        {/* View Task Detail Dialog */}
         <Dialog open={openViewDialog} onClose={() => setOpenViewDialog(false)} maxWidth="sm" fullWidth>
           <DialogTitle>Task Details</DialogTitle>
           <DialogContent>
@@ -789,6 +809,16 @@ export default function TasksPage() {
               startIcon={<EditIcon />}
             >
               Edit
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={() => {
+                if (selectedTask) handleDeleteTask(selectedTask.id);
+              }}
+            >
+              Delete
             </Button>
           </DialogActions>
         </Dialog>

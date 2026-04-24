@@ -16,8 +16,8 @@ export async function GET(
 
     const { id } = await params;
     const { searchParams } = new URL(req.url);
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    const limit = parseInt(searchParams.get('limit') || '50') || 50;
+    const offset = parseInt(searchParams.get('offset') || '0') || 0;
 
     const customObject = await prisma.customObject.findUnique({
       where: { id },
@@ -177,7 +177,7 @@ export async function PUT(
     });
 
     // Validate unique fields
-    const uniqueFields = customObject?.fields.filter((f) => f.isUnique) || [];
+    const uniqueFields = customObject?.fields?.filter((f) => f.isUnique) || [];
     for (const field of uniqueFields) {
       if (data && data[field.name]) {
         const existing = await prisma.customRecord.findFirst({

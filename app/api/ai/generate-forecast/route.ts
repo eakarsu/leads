@@ -4,6 +4,24 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { generateRevenueForecast } from '@/lib/openrouter';
 
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const forecasts = await prisma.revenueForecast.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    return NextResponse.json({ forecasts });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);

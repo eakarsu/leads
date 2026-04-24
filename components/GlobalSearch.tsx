@@ -57,7 +57,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
       const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
       if (!response.ok) throw new Error('Search failed');
       const data = await response.json();
-      setResults(data);
+      setResults(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Search error:', error);
       setResults([]);

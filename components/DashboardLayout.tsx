@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   Box,
   Drawer,
@@ -71,6 +71,17 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import GavelIcon from '@mui/icons-material/Gavel';
 import SyncIcon from '@mui/icons-material/Sync';
 import CategoryIcon from '@mui/icons-material/Category';
+import BuildIcon from '@mui/icons-material/Build';
+import MapIcon from '@mui/icons-material/Map';
+import LoyaltyIcon from '@mui/icons-material/Loyalty';
+import BookOnlineIcon from '@mui/icons-material/BookOnline';
+import InsightsIcon from '@mui/icons-material/Insights';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import MessageIcon from '@mui/icons-material/Message';
+import AbcIcon from '@mui/icons-material/Abc';
+import WebAssetIcon from '@mui/icons-material/WebAsset';
+import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize';
+import RuleIcon from '@mui/icons-material/Rule';
 import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
@@ -104,6 +115,10 @@ const menuItems = [
       { text: 'Invoices', path: '/invoices' },
       { text: 'Forecasting', path: '/forecasting' },
       { text: 'CPQ', path: '/cpq' },
+      { text: 'Pipeline Inspection', path: '/pipeline-inspection' },
+      { text: 'Revenue Intelligence', path: '/revenue-intelligence' },
+      { text: 'Sales Cadences', path: '/sales-cadences' },
+      { text: 'Conversation Insights', path: '/conversation-insights' },
     ]
   },
   {
@@ -117,6 +132,30 @@ const menuItems = [
       { text: 'Assets', path: '/assets' },
       { text: 'Live Chat', path: '/live-chat' },
       { text: 'Service Contracts', path: '/service-contracts' },
+      { text: 'Einstein Bots', path: '/einstein-bots' },
+      { text: 'Social Service', path: '/social-service' },
+      { text: 'Messaging', path: '/messaging' },
+    ]
+  },
+  {
+    text: 'Field Service',
+    icon: <BuildIcon />,
+    path: '/work-orders',
+    submenu: [
+      { text: 'Work Orders', path: '/work-orders' },
+      { text: 'Service Appointments', path: '/service-appointments' },
+      { text: 'Scheduling Wizard', path: '/scheduling' },
+      { text: 'Service Territories', path: '/service-territories' },
+      { text: 'Service Resources', path: '/service-resources' },
+      { text: 'Service Crews', path: '/service-crews' },
+      { text: 'Work Types', path: '/work-types' },
+      { text: 'Skills', path: '/skills' },
+      { text: 'Shifts', path: '/shifts' },
+      { text: 'Time Sheets', path: '/time-sheets' },
+      { text: 'Resource Absences', path: '/resource-absences' },
+      { text: 'Field Service Assets', path: '/field-service-assets' },
+      { text: 'Maintenance Plans', path: '/maintenance-plans' },
+      { text: 'Scheduling Policies', path: '/scheduling-policies' },
     ]
   },
   {
@@ -130,6 +169,10 @@ const menuItems = [
       { text: 'Journeys', path: '/journeys' },
       { text: 'Marketing Events', path: '/marketing-events' },
       { text: 'Surveys', path: '/surveys' },
+      { text: 'Campaign Influence', path: '/campaign-influence' },
+      { text: 'A/B Tests', path: '/ab-tests' },
+      { text: 'Landing Pages', path: '/landing-pages' },
+      { text: 'Marketing Analytics', path: '/marketing-analytics' },
     ]
   },
   {
@@ -151,6 +194,7 @@ const menuItems = [
     submenu: [
       { text: 'Workflows', path: '/workflows' },
       { text: 'Process Builder', path: '/process-builder' },
+      { text: 'Approvals', path: '/approvals' },
     ]
   },
   { text: 'Einstein AI', icon: <AutoAwesomeIcon />, path: '/einstein' },
@@ -171,6 +215,7 @@ const menuItems = [
       { text: 'All Reports', path: '/reports' },
       { text: 'Create Report', path: '/report-builder' },
       { text: 'Scheduled Reports', path: '/scheduled-reports' },
+      { text: 'Dynamic Dashboards', path: '/dynamic-dashboards' },
     ]
   },
   {
@@ -179,8 +224,12 @@ const menuItems = [
     path: '/roles',
     submenu: [
       { text: 'Roles & Hierarchy', path: '/roles' },
+      { text: 'Validation Rules', path: '/validation-rules' },
     ]
   },
+  { text: 'Loyalty', icon: <LoyaltyIcon />, path: '/loyalty' },
+  { text: 'Maps', icon: <MapIcon />, path: '/maps' },
+  { text: 'Scheduler', icon: <BookOnlineIcon />, path: '/scheduler' },
   {
     text: 'Settings',
     icon: <SettingsIcon />,
@@ -195,6 +244,7 @@ const menuItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({});
@@ -237,42 +287,72 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </Toolbar>
       <Divider />
       <List>
-        {menuItems.map((item) => (
-          <div key={item.text}>
-            <ListItem disablePadding>
-              <ListItemButton
-                onClick={() => {
-                  if (item.submenu) {
-                    handleSubmenuToggle(item.text);
-                  } else {
-                    handleMenuClick(item.path);
-                  }
-                }}
-              >
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} />
-                {item.submenu && (
-                  openSubmenus[item.text] ? <ExpandLess /> : <ExpandMore />
-                )}
-              </ListItemButton>
-            </ListItem>
-            {item.submenu && (
-              <Collapse in={openSubmenus[item.text]} timeout="auto" unmountOnExit>
-                <List component="div" disablePadding>
-                  {item.submenu.map((subItem: any) => (
-                    <ListItemButton
-                      key={subItem.text}
-                      sx={{ pl: 4 }}
-                      onClick={() => handleMenuClick(subItem.path)}
-                    >
-                      <ListItemText primary={subItem.text} />
-                    </ListItemButton>
-                  ))}
-                </List>
-              </Collapse>
-            )}
-          </div>
-        ))}
+        {menuItems.map((item) => {
+          const isActive = !item.submenu && pathname === item.path;
+          const hasActiveChild = item.submenu?.some((sub: any) => pathname === sub.path);
+
+          return (
+            <div key={item.text}>
+              <ListItem disablePadding>
+                <ListItemButton
+                  onClick={() => {
+                    if (item.submenu) {
+                      handleSubmenuToggle(item.text);
+                    } else {
+                      handleMenuClick(item.path);
+                    }
+                  }}
+                  sx={{
+                    ...(isActive && {
+                      bgcolor: 'primary.main',
+                      color: 'primary.contrastText',
+                      '&:hover': { bgcolor: 'primary.dark' },
+                      '& .MuiListItemIcon-root': { color: 'primary.contrastText' },
+                    }),
+                    ...(hasActiveChild && {
+                      bgcolor: 'action.selected',
+                    }),
+                  }}
+                >
+                  <ListItemIcon>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.text} />
+                  {item.submenu && (
+                    openSubmenus[item.text] ? <ExpandLess /> : <ExpandMore />
+                  )}
+                </ListItemButton>
+              </ListItem>
+              {item.submenu && (
+                <Collapse in={openSubmenus[item.text] || hasActiveChild} timeout="auto" unmountOnExit>
+                  <List component="div" disablePadding>
+                    {item.submenu.map((subItem: any) => {
+                      const isSubActive = pathname === subItem.path;
+                      return (
+                        <ListItemButton
+                          key={subItem.text}
+                          sx={{
+                            pl: 4,
+                            ...(isSubActive && {
+                              bgcolor: 'primary.light',
+                              color: 'primary.contrastText',
+                              fontWeight: 'bold',
+                              '&:hover': { bgcolor: 'primary.main' },
+                            }),
+                          }}
+                          onClick={() => handleMenuClick(subItem.path)}
+                        >
+                          <ListItemText
+                            primary={subItem.text}
+                            primaryTypographyProps={isSubActive ? { fontWeight: 'bold' } : undefined}
+                          />
+                        </ListItemButton>
+                      );
+                    })}
+                  </List>
+                </Collapse>
+              )}
+            </div>
+          );
+        })}
       </List>
     </div>
   );

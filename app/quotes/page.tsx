@@ -43,7 +43,17 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Quote {
   id: string;
@@ -62,8 +72,17 @@ interface Quote {
   createdAt: string;
 }
 
+const tableColumns: Column[] = [
+  { id: 'name', label: 'Quote' },
+  { id: 'account', label: 'Account', sortable: false },
+  { id: 'lineItems', label: 'Items', sortable: false },
+  { id: 'grandTotal', label: 'Total' },
+  { id: 'expirationDate', label: 'Expires' },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function QuotesPage() {
-  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [stats, setStats] = useState({
     totalQuotes: 0,
     draftQuotes: 0,
@@ -72,12 +91,19 @@ export default function QuotesPage() {
     acceptedQuotes: 0,
     totalValue: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    expirationDate: '',
+    discount: 0,
+    tax: 0,
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [formData, setFormData] = useState({
@@ -90,22 +116,37 @@ export default function QuotesPage() {
     lineItems: [{ productId: '', productName: '', quantity: 1, unitPrice: 0 }],
   });
 
+  const [sortBy, setSortByLocal] = useState('createdAt');
+  const [sortOrder, setSortOrderLocal] = useState<'asc' | 'desc'>('desc');
+
+  const { data: quotes, loading, error, pagination, setPage, setPageSize, setSort, refresh } = usePagination<Quote>({
+    url: '/api/quotes',
+    defaultSortBy: 'createdAt',
+  });
+
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByLocal(col);
+    setSortOrderLocal(newOrder);
+    setSort(col, newOrder);
+  };
+
   useEffect(() => {
-    fetchQuotes();
+    fetchStats();
     fetchAccounts();
     fetchProducts();
   }, []);
 
-  const fetchQuotes = async () => {
+  const fetchStats = async () => {
     try {
       const response = await fetch('/api/quotes');
       const data = await response.json();
-      setQuotes(data.quotes || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching quotes:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -113,7 +154,7 @@ export default function QuotesPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -123,7 +164,7 @@ export default function QuotesPage() {
     try {
       const response = await fetch('/api/products');
       const data = await response.json();
-      setProducts(data.products || data || []);
+      setProducts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
     }
@@ -148,11 +189,16 @@ export default function QuotesPage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchQuotes();
+        refresh();
+        fetchStats();
         resetForm();
+        toast.showSuccess('Quote created successfully');
+      } else {
+        toast.showError('Failed to create quote');
       }
     } catch (error) {
       console.error('Error creating quote:', error);
+      toast.showError('Error creating quote');
     }
   };
 
@@ -163,20 +209,71 @@ export default function QuotesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: quoteId, status: 'APPROVED' }),
       });
-      fetchQuotes();
+      refresh();
+      fetchStats();
+      toast.showSuccess('Quote approved successfully');
     } catch (error) {
       console.error('Error approving quote:', error);
+      toast.showError('Error approving quote');
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedQuote) return;
+    setEditFormData({
+      name: selectedQuote.name || '',
+      expirationDate: selectedQuote.expirationDate ? selectedQuote.expirationDate.split('T')[0] : '',
+      discount: selectedQuote.discount || 0,
+      tax: selectedQuote.tax || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedQuote) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch(`/api/quotes/${selectedQuote.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      if (response.ok) {
+        refresh();
+        fetchStats();
+        setEditMode(false);
+        setDetailOpen(false);
+        setSelectedQuote(null);
+        toast.showSuccess('Quote updated successfully');
+      } else {
+        toast.showError('Failed to update quote');
+      }
+    } catch (error) {
+      console.error('Error updating quote:', error);
+      toast.showError('Error updating quote');
+    } finally {
+      setEditSaving(false);
     }
   };
 
   const handleDeleteQuote = async (quoteId: string) => {
-    if (!confirm('Are you sure you want to delete this quote?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Quote',
+      message: 'Are you sure you want to delete this quote? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/quotes?id=${quoteId}`, { method: 'DELETE' });
-      fetchQuotes();
+      refresh();
+      fetchStats();
+      setDetailOpen(false);
+      toast.showSuccess('Quote deleted successfully');
     } catch (error) {
       console.error('Error deleting quote:', error);
+      toast.showError('Error deleting quote');
     }
   };
 
@@ -259,14 +356,12 @@ export default function QuotesPage() {
   };
 
   const filteredQuotes = quotes.filter((q) => {
-    // Search filter
     const searchLower = search.toLowerCase();
     const matchesSearch = !search ||
       q.name.toLowerCase().includes(searchLower) ||
       q.quoteNumber.toLowerCase().includes(searchLower) ||
       q.account?.name.toLowerCase().includes(searchLower);
 
-    // Tab filter
     let matchesTab = true;
     if (tabValue === 1) matchesTab = q.status === 'DRAFT';
     else if (tabValue === 2) matchesTab = ['NEEDS_REVIEW', 'IN_REVIEW'].includes(q.status);
@@ -276,18 +371,31 @@ export default function QuotesPage() {
     return matchesSearch && matchesTab;
   });
 
+  const exportData = filteredQuotes.map((q) => ({
+    Name: q.name,
+    'Quote Number': q.quoteNumber,
+    Account: q.account?.name || '-',
+    Items: q._count?.lineItems || 0,
+    Total: formatCurrency(q.grandTotal),
+    Expires: q.expirationDate ? new Date(q.expirationDate).toLocaleDateString() : '-',
+    Status: q.status,
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Quotes</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Quote
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="quotes" title="Quotes Export" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Quote
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -362,140 +470,147 @@ export default function QuotesPage() {
         </Paper>
 
         {/* Quotes Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Quote</TableCell>
-                <TableCell>Account</TableCell>
-                <TableCell>Items</TableCell>
-                <TableCell>Total</TableCell>
-                <TableCell>Expires</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredQuotes.map((quote) => (
-                <TableRow
-                  key={quote.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    setSelectedQuote(quote);
-                    setDetailOpen(true);
-                  }}
-                >
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box>
-                        <Typography variant="body2" fontWeight="bold">
-                          {quote.name}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {quote.quoteNumber}
-                        </Typography>
+        {loading ? (
+          <TableSkeleton rows={8} columns={7} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={tableColumns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {filteredQuotes.map((quote) => (
+                  <TableRow
+                    key={quote.id}
+                    hover
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      setSelectedQuote(quote);
+                      setEditMode(false);
+                      setDetailOpen(true);
+                    }}
+                  >
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box>
+                          <Typography variant="body2" fontWeight="bold">
+                            {quote.name}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {quote.quoteNumber}
+                          </Typography>
+                        </Box>
+                        {quote.isPrimary && (
+                          <Tooltip title="Primary Quote">
+                            <StarIcon color="primary" fontSize="small" />
+                          </Tooltip>
+                        )}
                       </Box>
-                      {quote.isPrimary && (
-                        <Tooltip title="Primary Quote">
-                          <StarIcon color="primary" fontSize="small" />
-                        </Tooltip>
-                      )}
-                    </Box>
-                  </TableCell>
-                  <TableCell>{quote.account?.name || '-'}</TableCell>
-                  <TableCell>{quote._count?.lineItems || 0} items</TableCell>
-                  <TableCell>
-                    <Typography fontWeight="medium">
-                      {formatCurrency(quote.grandTotal)}
-                    </Typography>
-                    {quote.discount > 0 && (
-                      <Typography variant="caption" color="success.main">
-                        -{formatCurrency(quote.discount)} discount
+                    </TableCell>
+                    <TableCell>{quote.account?.name || '-'}</TableCell>
+                    <TableCell>{quote._count?.lineItems || 0} items</TableCell>
+                    <TableCell>
+                      <Typography fontWeight="medium">
+                        {formatCurrency(quote.grandTotal)}
                       </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Box>
-                      {quote.expirationDate ? new Date(quote.expirationDate).toLocaleDateString() : '-'}
-                      {isExpiringSoon(quote.expirationDate) && (
-                        <Typography variant="caption" color="warning.main" display="block">
-                          Expiring soon
+                      {quote.discount > 0 && (
+                        <Typography variant="caption" color="success.main">
+                          -{formatCurrency(quote.discount)} discount
                         </Typography>
                       )}
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={quote.status.replace('_', ' ')}
-                      color={getStatusColor(quote.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip title="Download PDF">
-                      <IconButton
+                    </TableCell>
+                    <TableCell>
+                      <Box>
+                        {quote.expirationDate ? new Date(quote.expirationDate).toLocaleDateString() : '-'}
+                        {isExpiringSoon(quote.expirationDate) && (
+                          <Typography variant="caption" color="warning.main" display="block">
+                            Expiring soon
+                          </Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={quote.status.replace('_', ' ')}
+                        color={getStatusColor(quote.status) as any}
                         size="small"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <PictureAsPdfIcon />
-                      </IconButton>
-                    </Tooltip>
-                    {quote.status === 'DRAFT' && (
-                      <>
-                        <Tooltip title="Send for Review">
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Tooltip title="Download PDF">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <PictureAsPdfIcon />
+                        </IconButton>
+                      </Tooltip>
+                      {quote.status === 'DRAFT' && (
+                        <>
+                          <Tooltip title="Send for Review">
+                            <IconButton
+                              size="small"
+                              color="info"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleApproveQuote(quote.id);
+                              }}
+                            >
+                              <SendIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteQuote(quote.id);
+                              }}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                      {quote.status === 'NEEDS_REVIEW' && (
+                        <Tooltip title="Approve">
                           <IconButton
                             size="small"
-                            color="info"
+                            color="success"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleApproveQuote(quote.id);
                             }}
                           >
-                            <SendIcon />
+                            <CheckCircleIcon />
                           </IconButton>
                         </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteQuote(quote.id);
-                            }}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    )}
-                    {quote.status === 'NEEDS_REVIEW' && (
-                      <Tooltip title="Approve">
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleApproveQuote(quote.id);
-                          }}
-                        >
-                          <CheckCircleIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredQuotes.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    No quotes found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredQuotes.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center">
+                      No quotes found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Create Quote Dialog */}
@@ -685,7 +800,7 @@ export default function QuotesPage() {
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedQuote && (
+          {selectedQuote && !editMode && (
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="caption" color="textSecondary">Status</Typography>
@@ -766,33 +881,116 @@ export default function QuotesPage() {
               </Grid>
             </Grid>
           )}
+          {selectedQuote && editMode && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Quote Name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  fullWidth
+                  label="Expiration Date"
+                  type="date"
+                  value={editFormData.expirationDate}
+                  onChange={(e) => setEditFormData({ ...editFormData, expirationDate: e.target.value })}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  fullWidth
+                  label="Discount"
+                  type="number"
+                  value={editFormData.discount}
+                  onChange={(e) => setEditFormData({ ...editFormData, discount: parseFloat(e.target.value) || 0 })}
+                  InputProps={{
+                    startAdornment: <Typography sx={{ mr: 0.5 }}>$</Typography>,
+                  }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  fullWidth
+                  label="Tax"
+                  type="number"
+                  value={editFormData.tax}
+                  onChange={(e) => setEditFormData({ ...editFormData, tax: parseFloat(e.target.value) || 0 })}
+                  InputProps={{
+                    startAdornment: <Typography sx={{ mr: 0.5 }}>$</Typography>,
+                  }}
+                />
+              </Grid>
+            </Grid>
+          )}
         </DialogContent>
         <DialogActions>
-          {selectedQuote && selectedQuote.status === 'DRAFT' && (
-            <Button
-              color="info"
-              variant="contained"
-              onClick={() => {
-                handleApproveQuote(selectedQuote.id);
-                setDetailOpen(false);
-              }}
-            >
-              Send for Review
-            </Button>
+          {!editMode && (
+            <>
+              {selectedQuote && selectedQuote.status === 'DRAFT' && (
+                <>
+                  <Button
+                    color="info"
+                    variant="contained"
+                    onClick={() => {
+                      handleApproveQuote(selectedQuote.id);
+                      setDetailOpen(false);
+                    }}
+                  >
+                    Send for Review
+                  </Button>
+                  <Button
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={() => handleDeleteQuote(selectedQuote.id)}
+                  >
+                    Delete
+                  </Button>
+                </>
+              )}
+              {selectedQuote && selectedQuote.status === 'NEEDS_REVIEW' && (
+                <Button
+                  color="success"
+                  variant="contained"
+                  onClick={() => {
+                    handleApproveQuote(selectedQuote.id);
+                    setDetailOpen(false);
+                  }}
+                >
+                  Approve
+                </Button>
+              )}
+              <Button
+                startIcon={<EditIcon />}
+                onClick={handleStartEdit}
+              >
+                Edit
+              </Button>
+              <Button onClick={() => setDetailOpen(false)}>Close</Button>
+            </>
           )}
-          {selectedQuote && selectedQuote.status === 'NEEDS_REVIEW' && (
-            <Button
-              color="success"
-              variant="contained"
-              onClick={() => {
-                handleApproveQuote(selectedQuote.id);
-                setDetailOpen(false);
-              }}
-            >
-              Approve
-            </Button>
+          {editMode && (
+            <>
+              <Button
+                startIcon={<CancelIcon />}
+                onClick={() => setEditMode(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+              >
+                {editSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </>
           )}
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </DashboardLayout>

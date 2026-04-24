@@ -9,21 +9,27 @@ import {
   CardContent,
   Typography,
   Button,
-  CircularProgress,
   Alert,
   Chip,
   List,
   ListItem,
   ListItemText,
+  ListItemButton,
   Divider,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
 import NextBestActions from '@/components/NextBestActions';
+import CardSkeleton from '@/components/CardSkeleton';
+import TableSkeleton from '@/components/TableSkeleton';
 import BusinessIcon from '@mui/icons-material/Business';
 import CampaignIcon from '@mui/icons-material/Campaign';
 import PeopleIcon from '@mui/icons-material/People';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import DescriptionIcon from '@mui/icons-material/Description';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 
 interface Stats {
   totalClients: number;
@@ -32,6 +38,10 @@ interface Stats {
   totalLeads: number;
   qualifiedLeads: number;
   wonLeads: number;
+  openCases: number;
+  activeContracts: number;
+  pendingTasks: number;
+  totalOpportunities: number;
   leadsByStatus: Record<string, number>;
   recentActivities: any[];
   topCampaigns: any[];
@@ -107,8 +117,20 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
+        <Box>
+          <Typography variant="h4" gutterBottom>Dashboard</Typography>
+          <Grid container spacing={3} sx={{ mb: 4 }}>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <Grid key={i} size={{ xs: 12, sm: 6, md: 3 }}>
+                <CardSkeleton />
+              </Grid>
+            ))}
+          </Grid>
+          <Card sx={{ mb: 4 }}>
+            <CardContent>
+              <TableSkeleton rows={3} columns={3} />
+            </CardContent>
+          </Card>
         </Box>
       </DashboardLayout>
     );
@@ -142,19 +164,14 @@ export default function DashboardPage() {
               sx={{
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4
-                }
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
               }}
               onClick={() => router.push('/clients')}
             >
               <CardContent>
                 <Box display="flex" alignItems="center" mb={1}>
                   <BusinessIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">
-                    Total Clients
-                  </Typography>
+                  <Typography color="text.secondary" variant="body2">Total Clients</Typography>
                 </Box>
                 <Typography variant="h4">{stats.totalClients}</Typography>
               </CardContent>
@@ -166,19 +183,14 @@ export default function DashboardPage() {
               sx={{
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4
-                }
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
               }}
               onClick={() => router.push('/campaigns')}
             >
               <CardContent>
                 <Box display="flex" alignItems="center" mb={1}>
                   <CampaignIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">
-                    Active Campaigns
-                  </Typography>
+                  <Typography color="text.secondary" variant="body2">Active Campaigns</Typography>
                 </Box>
                 <Typography variant="h4">{stats.activeCampaigns}</Typography>
                 <Typography variant="caption" color="text.secondary">
@@ -193,19 +205,14 @@ export default function DashboardPage() {
               sx={{
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4
-                }
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
               }}
               onClick={() => router.push('/leads')}
             >
               <CardContent>
                 <Box display="flex" alignItems="center" mb={1}>
                   <PeopleIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">
-                    Total Leads
-                  </Typography>
+                  <Typography color="text.secondary" variant="body2">Total Leads</Typography>
                 </Box>
                 <Typography variant="h4">{stats.totalLeads}</Typography>
                 <Typography variant="caption" color="text.secondary">
@@ -220,26 +227,99 @@ export default function DashboardPage() {
               sx={{
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4
-                }
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
               }}
               onClick={() => router.push('/leads?status=WON')}
             >
               <CardContent>
                 <Box display="flex" alignItems="center" mb={1}>
                   <CheckCircleIcon color="success" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">
-                    Deals Won
-                  </Typography>
+                  <Typography color="text.secondary" variant="body2">Deals Won</Typography>
                 </Box>
                 <Typography variant="h4">{stats.wonLeads}</Typography>
                 <Typography variant="caption" color="text.secondary">
                   {stats.totalLeads > 0
                     ? ((stats.wonLeads / stats.totalLeads) * 100).toFixed(1)
-                    : 0}
-                  % conversion
+                    : 0}% conversion
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card
+              sx={{
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
+              }}
+              onClick={() => router.push('/cases')}
+            >
+              <CardContent>
+                <Box display="flex" alignItems="center" mb={1}>
+                  <SupportAgentIcon color="warning" sx={{ mr: 1 }} />
+                  <Typography color="text.secondary" variant="body2">Open Cases</Typography>
+                </Box>
+                <Typography variant="h4">{stats.openCases}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card
+              sx={{
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
+              }}
+              onClick={() => router.push('/contracts')}
+            >
+              <CardContent>
+                <Box display="flex" alignItems="center" mb={1}>
+                  <DescriptionIcon color="info" sx={{ mr: 1 }} />
+                  <Typography color="text.secondary" variant="body2">Active Contracts</Typography>
+                </Box>
+                <Typography variant="h4">{stats.activeContracts}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card
+              sx={{
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
+              }}
+              onClick={() => router.push('/tasks')}
+            >
+              <CardContent>
+                <Box display="flex" alignItems="center" mb={1}>
+                  <AssignmentIcon color="error" sx={{ mr: 1 }} />
+                  <Typography color="text.secondary" variant="body2">Pending Tasks</Typography>
+                </Box>
+                <Typography variant="h4">{stats.pendingTasks}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card
+              sx={{
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
+              }}
+              onClick={() => router.push('/opportunities')}
+            >
+              <CardContent>
+                <Box display="flex" alignItems="center" mb={1}>
+                  <TrendingUpIcon color="secondary" sx={{ mr: 1 }} />
+                  <Typography color="text.secondary" variant="body2">Pipeline</Typography>
+                </Box>
+                <Typography variant="h4">{stats.totalOpportunities}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  open opportunities
                 </Typography>
               </CardContent>
             </Card>
@@ -270,11 +350,7 @@ export default function DashboardPage() {
               </Button>
             </Box>
 
-            {loadingAI && (
-              <Box display="flex" justifyContent="center" py={4}>
-                <CircularProgress />
-              </Box>
-            )}
+            {loadingAI && <TableSkeleton rows={3} columns={2} />}
 
             {aiInsights && !loadingAI && (
               <Box>
@@ -288,7 +364,7 @@ export default function DashboardPage() {
                 <List>
                   {aiInsights.keyInsights.map((insight, index) => (
                     <ListItem key={index}>
-                      <ListItemText primary={`• ${insight}`} />
+                      <ListItemText primary={`\u2022 ${insight}`} />
                     </ListItem>
                   ))}
                 </List>
@@ -306,11 +382,7 @@ export default function DashboardPage() {
                               label={opp.priority}
                               size="small"
                               color={
-                                opp.priority === 'High'
-                                  ? 'error'
-                                  : opp.priority === 'Medium'
-                                  ? 'warning'
-                                  : 'default'
+                                opp.priority === 'High' ? 'error' : opp.priority === 'Medium' ? 'warning' : 'default'
                               }
                             />
                             <span>{opp.recommendation}</span>
@@ -330,7 +402,7 @@ export default function DashboardPage() {
 
             {!aiInsights && !loadingAI && (
               <Alert severity="info">
-                Click "Generate AI Insights" to get personalized recommendations based on your
+                Click &quot;Generate AI Insights&quot; to get personalized recommendations based on your
                 current performance metrics.
               </Alert>
             )}
@@ -348,17 +420,17 @@ export default function DashboardPage() {
                 <List>
                   {stats.topCampaigns.map((campaign, index) => (
                     <div key={campaign.id}>
-                      <ListItem>
+                      <ListItemButton onClick={() => router.push(`/campaigns/${campaign.id}`)}>
                         <ListItemText
                           primary={campaign.name}
-                          secondary={`${campaign.client.name} • ${campaign._count.leads} leads`}
+                          secondary={`${campaign.client.name} \u2022 ${campaign._count.leads} leads`}
                         />
                         <Chip
                           label={campaign.status}
                           size="small"
                           color={campaign.status === 'ACTIVE' ? 'success' : 'default'}
                         />
-                      </ListItem>
+                      </ListItemButton>
                       {index < stats.topCampaigns.length - 1 && <Divider />}
                     </div>
                   ))}
@@ -376,14 +448,12 @@ export default function DashboardPage() {
                 <List>
                   {stats.recentActivities.slice(0, 5).map((activity, index) => (
                     <div key={activity.id}>
-                      <ListItem>
+                      <ListItemButton onClick={() => router.push(`/leads/${activity.lead?.id || ''}`)}>
                         <ListItemText
-                          primary={`${activity.type}: ${activity.lead.fullName} (${activity.lead.company})`}
-                          secondary={`By ${activity.user.name} • ${new Date(
-                            activity.timestamp
-                          ).toLocaleDateString()}`}
+                          primary={`${activity.type}: ${activity.lead?.fullName || 'Unknown'} (${activity.lead?.company || ''})`}
+                          secondary={`By ${activity.user?.name || 'System'} \u2022 ${new Date(activity.timestamp).toLocaleDateString()}`}
                         />
-                      </ListItem>
+                      </ListItemButton>
                       {index < 4 && <Divider />}
                     </div>
                   ))}

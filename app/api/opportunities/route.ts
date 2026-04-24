@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,17 +11,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get('clientId');
     const stage = searchParams.get('stage');
     const ownerId = searchParams.get('ownerId');
 
+    const where = {
+      ...(clientId && { clientId }),
+      ...(stage && { stage: stage as any }),
+      ...(ownerId && { ownerId }),
+    };
+
+    const total = await prisma.opportunity.count({ where });
+
     const opportunities = await prisma.opportunity.findMany({
-      where: {
-        ...(clientId && { clientId }),
-        ...(stage && { stage: stage as any }),
-        ...(ownerId && { ownerId }),
-      },
+      where,
       include: {
         client: true,
         contact: true,
@@ -44,12 +51,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        expectedCloseDate: 'asc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(opportunities);
+    return NextResponse.json(buildPaginatedResponse(opportunities, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching opportunities:', error);
     return NextResponse.json(

@@ -33,7 +33,11 @@ import {
   Avatar,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
+import CancelIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import BusinessIcon from '@mui/icons-material/Business';
@@ -41,6 +45,8 @@ import PeopleIcon from '@mui/icons-material/People';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import HandshakeIcon from '@mui/icons-material/Handshake';
 import DashboardLayout from '@/components/DashboardLayout';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface PartnerAccount {
   id: string;
@@ -85,6 +91,11 @@ export default function PartnerPortalPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<PartnerUser | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<PartnerAccount | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    portalStatus: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [contacts, setContacts] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [formData, setFormData] = useState({
@@ -92,6 +103,9 @@ export default function PartnerPortalPage() {
     accountId: '',
     partnerLevel: 'SILVER',
   });
+
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirmDialog();
 
   useEffect(() => {
     fetchData();
@@ -117,7 +131,7 @@ export default function PartnerPortalPage() {
     try {
       const response = await fetch('/api/contacts');
       const data = await response.json();
-      setContacts(data.contacts || data || []);
+      setContacts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching contacts:', error);
     }
@@ -127,7 +141,7 @@ export default function PartnerPortalPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -166,6 +180,62 @@ export default function PartnerPortalPage() {
       fetchData();
     } catch (error) {
       console.error('Error updating status:', error);
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedUser) return;
+    setEditFormData({
+      portalStatus: selectedUser.portalStatus || 'ACTIVE',
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedUser) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/partner-portal', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactId: selectedUser.id, portalStatus: editFormData.portalStatus }),
+      });
+      if (response.ok) {
+        showSuccess('Partner user updated successfully');
+        setEditMode(false);
+        setDetailOpen(false);
+        fetchData();
+      } else {
+        showError('Failed to update partner user');
+      }
+    } catch (error) {
+      console.error('Error updating partner user:', error);
+      showError('Failed to update partner user');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeletePartnerUser = async (userId: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Partner User',
+      message: 'Are you sure you want to remove partner access for this user?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    try {
+      await fetch(`/api/partner-portal?id=${userId}`, { method: 'DELETE' });
+      fetchData();
+      if (selectedUser?.id === userId) {
+        setDetailOpen(false);
+        setSelectedUser(null);
+      }
+      showSuccess('Partner user removed successfully');
+    } catch (error) {
+      console.error('Error deleting partner user:', error);
+      showError('Failed to remove partner user');
     }
   };
 
@@ -309,6 +379,7 @@ export default function PartnerPortalPage() {
                     onClick={() => {
                       setSelectedUser(user);
                       setSelectedAccount(null);
+                      setEditMode(false);
                       setDetailOpen(true);
                     }}
                   >
@@ -395,6 +466,7 @@ export default function PartnerPortalPage() {
                     onClick={() => {
                       setSelectedAccount(account);
                       setSelectedUser(null);
+                      setEditMode(false);
                       setDetailOpen(true);
                     }}
                   >
@@ -523,7 +595,7 @@ export default function PartnerPortalPage() {
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedUser && (
+          {selectedUser && !editMode && (
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Typography variant="caption" color="textSecondary">Email</Typography>
@@ -560,6 +632,23 @@ export default function PartnerPortalPage() {
                   </Box>
                 </Grid>
               )}
+            </Grid>
+          )}
+          {selectedUser && editMode && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Portal Status"
+                  value={editFormData.portalStatus}
+                  onChange={(e) => setEditFormData({ ...editFormData, portalStatus: e.target.value })}
+                  select
+                >
+                  <MenuItem value="ACTIVE">Active</MenuItem>
+                  <MenuItem value="INACTIVE">Inactive</MenuItem>
+                  <MenuItem value="DISABLED">Disabled</MenuItem>
+                </TextField>
+              </Grid>
             </Grid>
           )}
           {selectedAccount && (
@@ -601,19 +690,55 @@ export default function PartnerPortalPage() {
           )}
         </DialogContent>
         <DialogActions>
-          {selectedUser && selectedUser.portalStatus !== 'ACTIVE' && (
-            <Button
-              color="success"
-              variant="contained"
-              onClick={() => {
-                handleUpdateStatus(selectedUser.id, 'ACTIVE');
-                setDetailOpen(false);
-              }}
-            >
-              Activate User
-            </Button>
+          {selectedUser && !editMode ? (
+            <>
+              {selectedUser.portalStatus !== 'ACTIVE' && (
+                <Button
+                  color="success"
+                  variant="contained"
+                  onClick={() => {
+                    handleUpdateStatus(selectedUser.id, 'ACTIVE');
+                    setDetailOpen(false);
+                  }}
+                >
+                  Activate User
+                </Button>
+              )}
+              <Button onClick={() => setDetailOpen(false)}>Close</Button>
+              <Button
+                startIcon={<EditIcon />}
+                onClick={handleStartEdit}
+              >
+                Edit
+              </Button>
+              <Button
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => handleDeletePartnerUser(selectedUser.id)}
+              >
+                Delete
+              </Button>
+            </>
+          ) : selectedUser && editMode ? (
+            <>
+              <Button
+                startIcon={<CancelIcon />}
+                onClick={() => setEditMode(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+              >
+                {editSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setDetailOpen(false)}>Close</Button>
           )}
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </DashboardLayout>

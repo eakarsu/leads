@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -29,7 +28,6 @@ import {
   Tooltip,
   Tab,
   Tabs,
-  LinearProgress,
   FormControlLabel,
   Switch,
 } from '@mui/material';
@@ -45,7 +43,16 @@ import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import SearchIcon from '@mui/icons-material/Search';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Survey {
   id: string;
@@ -59,6 +66,17 @@ interface Survey {
   createdAt: string;
   _count?: { questions: number; responses: number };
 }
+
+const columns: Column[] = [
+  { id: 'name', label: 'Survey Name' },
+  { id: 'type', label: 'Type' },
+  { id: 'questions', label: 'Questions', sortable: false },
+  { id: 'totalResponses', label: 'Responses' },
+  { id: 'avgCompletionTime', label: 'Avg. Time' },
+  { id: 'isAnonymous', label: 'Anonymous' },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
 
 export default function SurveysPage() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
@@ -74,6 +92,22 @@ export default function SurveysPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedSurvey, setSelectedSurvey] = useState<Survey | null>(null);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    description: '',
+    isActive: 'Yes',
+  });
+  const [editSaving, setEditSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -91,10 +125,12 @@ export default function SurveysPage() {
     try {
       const response = await fetch('/api/surveys');
       const data = await response.json();
-      setSurveys(data.surveys || []);
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setSurveys(arr);
       setStats(data.stats || {});
     } catch (error) {
       console.error('Error fetching surveys:', error);
+      showError('Failed to load surveys');
     } finally {
       setLoading(false);
     }
@@ -112,9 +148,13 @@ export default function SurveysPage() {
         setDialogOpen(false);
         fetchSurveys();
         resetForm();
+        showSuccess('Survey created successfully');
+      } else {
+        showError('Failed to create survey');
       }
     } catch (error) {
       console.error('Error creating survey:', error);
+      showError('Failed to create survey');
     }
   };
 
@@ -127,14 +167,22 @@ export default function SurveysPage() {
         body: JSON.stringify({ id: surveyId, status }),
       });
       fetchSurveys();
+      showSuccess(`Survey ${status.toLowerCase()}`);
     } catch (error) {
       console.error('Error updating survey status:', error);
+      showError('Failed to update survey status');
     }
   };
 
   const handleDeleteSurvey = async (surveyId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!confirm('Are you sure you want to delete this survey?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Survey',
+      message: 'Are you sure you want to delete this survey? All responses will be lost.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/surveys?id=${surveyId}`, { method: 'DELETE' });
@@ -143,14 +191,66 @@ export default function SurveysPage() {
         setDetailDialogOpen(false);
         setSelectedSurvey(null);
       }
+      showSuccess('Survey deleted successfully');
     } catch (error) {
       console.error('Error deleting survey:', error);
+      showError('Failed to delete survey');
     }
   };
 
   const handleRowClick = (survey: Survey) => {
     setSelectedSurvey(survey);
+    setEditMode(false);
     setDetailDialogOpen(true);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedSurvey) return;
+    setEditFormData({
+      title: selectedSurvey.name || '',
+      description: selectedSurvey.description || '',
+      isActive: selectedSurvey.status === 'ACTIVE' ? 'Yes' : 'No',
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedSurvey) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/surveys', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedSurvey.id,
+          name: editFormData.title,
+          description: editFormData.description,
+          status: editFormData.isActive === 'Yes' ? 'ACTIVE' : 'DRAFT',
+        }),
+      });
+      if (response.ok) {
+        showSuccess('Survey updated successfully');
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        fetchSurveys();
+      } else {
+        showError('Failed to update survey');
+      }
+    } catch (error) {
+      console.error('Error updating survey:', error);
+      showError('Failed to update survey');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleSort = (columnId: string) => {
+    if (sortBy === columnId) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(columnId);
+      setSortOrder('asc');
+    }
   };
 
   const resetForm = () => {
@@ -166,29 +266,20 @@ export default function SurveysPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'ACTIVE':
-        return 'success';
-      case 'CLOSED':
-        return 'error';
-      case 'DRAFT':
-        return 'default';
-      default:
-        return 'default';
+      case 'ACTIVE': return 'success';
+      case 'CLOSED': return 'error';
+      case 'DRAFT': return 'default';
+      default: return 'default';
     }
   };
 
   const getTypeLabel = (type: string) => {
     switch (type) {
-      case 'SATISFACTION':
-        return 'Satisfaction';
-      case 'NPS':
-        return 'NPS';
-      case 'FEEDBACK':
-        return 'Feedback';
-      case 'CUSTOM':
-        return 'Custom';
-      default:
-        return type;
+      case 'SATISFACTION': return 'Satisfaction';
+      case 'NPS': return 'NPS';
+      case 'FEEDBACK': return 'Feedback';
+      case 'CUSTOM': return 'Custom';
+      default: return type;
     }
   };
 
@@ -216,7 +307,30 @@ export default function SurveysPage() {
       else if (tabValue === 3) matchesTab = survey.status === 'DRAFT';
 
       return matchesSearch && matchesTab;
+    })
+    .sort((a, b) => {
+      const aVal = (a as any)[sortBy];
+      const bVal = (b as any)[sortBy];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal));
+      return sortOrder === 'asc' ? cmp : -cmp;
     });
+
+  const totalItems = filteredSurveys.length;
+  const paginatedSurveys = filteredSurveys.slice((page - 1) * pageSize, page * pageSize);
+
+  const exportData = filteredSurveys.map(s => ({
+    Name: s.name,
+    Type: getTypeLabel(s.type),
+    Questions: s._count?.questions || 0,
+    Responses: s.totalResponses,
+    'Avg Time': formatTime(s.avgCompletionTime),
+    Anonymous: s.isAnonymous ? 'Yes' : 'No',
+    Status: s.status,
+    Created: formatDate(s.createdAt),
+  }));
 
   return (
     <DashboardLayout>
@@ -226,13 +340,16 @@ export default function SurveysPage() {
             <PollIcon sx={{ fontSize: 32, color: 'primary.main' }} />
             <Typography variant="h4">Survey Management</Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Survey
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="surveys" title="Survey Management" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Survey
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -305,117 +422,121 @@ export default function SurveysPage() {
           </Tabs>
         </Paper>
 
-        {loading && <LinearProgress sx={{ mb: 2 }} />}
-
         {/* Surveys Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Survey Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Questions</TableCell>
-                <TableCell>Responses</TableCell>
-                <TableCell>Avg. Time</TableCell>
-                <TableCell>Anonymous</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredSurveys.map((survey) => (
-                <TableRow
-                  key={survey.id}
-                  hover
-                  onClick={() => handleRowClick(survey)}
-                  sx={{ cursor: 'pointer' }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {survey.name}
-                    </Typography>
-                    {survey.description && (
-                      <Typography variant="caption" color="textSecondary">
-                        {survey.description.substring(0, 50)}...
+        {loading ? (
+          <TableSkeleton rows={5} columns={8} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={columns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {paginatedSurveys.map((survey) => (
+                  <TableRow
+                    key={survey.id}
+                    hover
+                    onClick={() => handleRowClick(survey)}
+                    sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {survey.name}
                       </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={getTypeLabel(survey.type)} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>{survey._count?.questions || 0}</TableCell>
-                  <TableCell>{survey.totalResponses.toLocaleString()}</TableCell>
-                  <TableCell>{formatTime(survey.avgCompletionTime)}</TableCell>
-                  <TableCell>
-                    {survey.isAnonymous ? (
-                      <Chip label="Yes" size="small" color="info" />
-                    ) : (
-                      <Chip label="No" size="small" variant="outlined" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={survey.status}
-                      color={getStatusColor(survey.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {survey.status === 'DRAFT' && (
-                      <Tooltip title="Activate">
+                      {survey.description && (
+                        <Typography variant="caption" color="textSecondary">
+                          {survey.description.substring(0, 50)}...
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={getTypeLabel(survey.type)} size="small" variant="outlined" />
+                    </TableCell>
+                    <TableCell>{survey._count?.questions || 0}</TableCell>
+                    <TableCell>{survey.totalResponses.toLocaleString()}</TableCell>
+                    <TableCell>{formatTime(survey.avgCompletionTime)}</TableCell>
+                    <TableCell>
+                      {survey.isAnonymous ? (
+                        <Chip label="Yes" size="small" color="info" />
+                      ) : (
+                        <Chip label="No" size="small" variant="outlined" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={survey.status}
+                        color={getStatusColor(survey.status) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {survey.status === 'DRAFT' && (
+                        <Tooltip title="Activate">
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={(e) => handleStatusChange(survey.id, 'ACTIVE', e)}
+                          >
+                            <PlayArrowIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {survey.status === 'ACTIVE' && (
+                        <Tooltip title="Close">
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={(e) => handleStatusChange(survey.id, 'CLOSED', e)}
+                          >
+                            <PauseIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="Copy Link">
                         <IconButton
                           size="small"
-                          color="success"
-                          onClick={(e) => handleStatusChange(survey.id, 'ACTIVE', e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(`${window.location.origin}/survey/${survey.id}`);
+                            showSuccess('Survey link copied to clipboard');
+                          }}
                         >
-                          <PlayArrowIcon />
+                          <ContentCopyIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
-                    {survey.status === 'ACTIVE' && (
-                      <Tooltip title="Close">
+                      <Tooltip title="Delete">
                         <IconButton
                           size="small"
-                          color="warning"
-                          onClick={(e) => handleStatusChange(survey.id, 'CLOSED', e)}
+                          color="error"
+                          onClick={(e) => handleDeleteSurvey(survey.id, e)}
                         >
-                          <PauseIcon />
+                          <DeleteIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
-                    <Tooltip title="Copy Link">
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard.writeText(`${window.location.origin}/survey/${survey.id}`);
-                        }}
-                      >
-                        <ContentCopyIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={(e) => handleDeleteSurvey(survey.id, e)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredSurveys.length === 0 && !loading && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No surveys found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {paginatedSurveys.length === 0 && !loading && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center">
+                      No surveys found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Detail Dialog */}
@@ -439,107 +560,173 @@ export default function SurveysPage() {
               </Box>
             </DialogTitle>
             <DialogContent dividers>
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12 }}>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Chip
-                      label={selectedSurvey.status}
-                      color={getStatusColor(selectedSurvey.status) as any}
-                    />
-                    <Chip label={getTypeLabel(selectedSurvey.type)} variant="outlined" />
-                    {selectedSurvey.isAnonymous && (
-                      <Chip label="Anonymous" color="info" variant="outlined" />
-                    )}
-                  </Box>
-                </Grid>
-
-                {selectedSurvey.description && (
+              {selectedSurvey && !editMode && (
+                <Grid container spacing={3}>
                   <Grid size={{ xs: 12 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {selectedSurvey.description}
-                    </Typography>
-                  </Grid>
-                )}
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <QuestionAnswerIcon color="primary" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="h4">{selectedSurvey._count?.questions || 0}</Typography>
-                    <Typography variant="body2" color="text.secondary">Questions</Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <PeopleIcon color="success" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="h4">{selectedSurvey.totalResponses.toLocaleString()}</Typography>
-                    <Typography variant="body2" color="text.secondary">Responses</Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <AccessTimeIcon color="info" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="h4">{formatTime(selectedSurvey.avgCompletionTime)}</Typography>
-                    <Typography variant="body2" color="text.secondary">Avg. Completion</Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Survey Link
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/survey/${selectedSurvey.id}`}
-                        InputProps={{ readOnly: true }}
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={selectedSurvey.status}
+                        color={getStatusColor(selectedSurvey.status) as any}
                       />
-                      <IconButton
-                        onClick={() => navigator.clipboard.writeText(`${window.location.origin}/survey/${selectedSurvey.id}`)}
-                      >
-                        <ContentCopyIcon />
-                      </IconButton>
+                      <Chip label={getTypeLabel(selectedSurvey.type)} variant="outlined" />
+                      {selectedSurvey.isAnonymous && (
+                        <Chip label="Anonymous" color="info" variant="outlined" />
+                      )}
                     </Box>
-                  </Paper>
+                  </Grid>
+
+                  {selectedSurvey.description && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedSurvey.description}
+                      </Typography>
+                    </Grid>
+                  )}
+
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <QuestionAnswerIcon color="primary" sx={{ fontSize: 40, mb: 1 }} />
+                      <Typography variant="h4">{selectedSurvey._count?.questions || 0}</Typography>
+                      <Typography variant="body2" color="text.secondary">Questions</Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <PeopleIcon color="success" sx={{ fontSize: 40, mb: 1 }} />
+                      <Typography variant="h4">{selectedSurvey.totalResponses.toLocaleString()}</Typography>
+                      <Typography variant="body2" color="text.secondary">Responses</Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <AccessTimeIcon color="info" sx={{ fontSize: 40, mb: 1 }} />
+                      <Typography variant="h4">{formatTime(selectedSurvey.avgCompletionTime)}</Typography>
+                      <Typography variant="body2" color="text.secondary">Avg. Completion</Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Survey Link
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={`${typeof window !== 'undefined' ? window.location.origin : ''}/survey/${selectedSurvey.id}`}
+                          InputProps={{ readOnly: true }}
+                        />
+                        <IconButton
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/survey/${selectedSurvey.id}`);
+                            showSuccess('Survey link copied to clipboard');
+                          }}
+                        >
+                          <ContentCopyIcon />
+                        </IconButton>
+                      </Box>
+                    </Paper>
+                  </Grid>
                 </Grid>
-              </Grid>
+              )}
+              {selectedSurvey && editMode && (
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Title"
+                      value={editFormData.title}
+                      onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Description"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      multiline
+                      rows={3}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Is Active"
+                      value={editFormData.isActive}
+                      onChange={(e) => setEditFormData({ ...editFormData, isActive: e.target.value })}
+                      select
+                    >
+                      <MenuItem value="Yes">Yes</MenuItem>
+                      <MenuItem value="No">No</MenuItem>
+                    </TextField>
+                  </Grid>
+                </Grid>
+              )}
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
-              {selectedSurvey.status === 'DRAFT' && (
-                <Button
-                  color="success"
-                  startIcon={<PlayArrowIcon />}
-                  onClick={(e) => {
-                    handleStatusChange(selectedSurvey.id, 'ACTIVE', e);
-                    setDetailDialogOpen(false);
-                  }}
-                >
-                  Activate
-                </Button>
+              {!editMode ? (
+                <>
+                  {selectedSurvey.status === 'DRAFT' && (
+                    <Button
+                      color="success"
+                      startIcon={<PlayArrowIcon />}
+                      onClick={(e) => {
+                        handleStatusChange(selectedSurvey.id, 'ACTIVE', e);
+                        setDetailDialogOpen(false);
+                      }}
+                    >
+                      Activate
+                    </Button>
+                  )}
+                  {selectedSurvey.status === 'ACTIVE' && (
+                    <Button
+                      color="warning"
+                      startIcon={<PauseIcon />}
+                      onClick={(e) => {
+                        handleStatusChange(selectedSurvey.id, 'CLOSED', e);
+                        setDetailDialogOpen(false);
+                      }}
+                    >
+                      Close Survey
+                    </Button>
+                  )}
+                  <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
+                  <Button
+                    startIcon={<EditIcon />}
+                    onClick={handleStartEdit}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={(e) => handleDeleteSurvey(selectedSurvey.id, e)}
+                  >
+                    Delete
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    startIcon={<CancelIcon />}
+                    onClick={() => setEditMode(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveEdit}
+                    disabled={editSaving}
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </>
               )}
-              {selectedSurvey.status === 'ACTIVE' && (
-                <Button
-                  color="warning"
-                  startIcon={<PauseIcon />}
-                  onClick={(e) => {
-                    handleStatusChange(selectedSurvey.id, 'CLOSED', e);
-                    setDetailDialogOpen(false);
-                  }}
-                >
-                  Close Survey
-                </Button>
-              )}
-              <Button
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={(e) => handleDeleteSurvey(selectedSurvey.id, e)}
-              >
-                Delete
-              </Button>
-              <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
             </DialogActions>
           </>
         )}

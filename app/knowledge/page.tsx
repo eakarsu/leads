@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -40,7 +39,16 @@ import DraftsIcon from '@mui/icons-material/Drafts';
 import PublishIcon from '@mui/icons-material/Publish';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Article {
   id: string;
@@ -58,21 +66,41 @@ interface Article {
   updatedAt: string;
 }
 
+const columns: Column[] = [
+  { id: 'title', label: 'Article' },
+  { id: 'category', label: 'Category', sortable: false },
+  { id: 'viewCount', label: 'Views' },
+  { id: 'status', label: 'Status' },
+  { id: 'isPublic', label: 'Visibility' },
+  { id: 'updatedAt', label: 'Updated' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function KnowledgePage() {
-  const [articles, setArticles] = useState<Article[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    content: '',
+    summary: '',
+    status: '',
+    isPublic: false,
+  });
   const [stats, setStats] = useState({
     totalArticles: 0,
     publishedArticles: 0,
     draftArticles: 0,
     publicArticles: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('updatedAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [formData, setFormData] = useState({
     title: '',
     summary: '',
@@ -82,24 +110,37 @@ export default function KnowledgePage() {
     isPublic: false,
   });
 
+  const extraParams: Record<string, string> = {};
+  if (search) extraParams.search = search;
+
+  const {
+    data: articles,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Article>({
+    url: '/api/knowledge',
+    defaultSortBy: 'updatedAt',
+    defaultSortOrder: 'desc',
+    extraParams,
+  });
+
   useEffect(() => {
-    fetchArticles();
     fetchCategories();
+    fetchStats();
   }, []);
 
-  const fetchArticles = async () => {
+  const fetchStats = async () => {
     try {
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-
-      const response = await fetch(`/api/knowledge?${params}`);
+      const response = await fetch('/api/knowledge');
       const data = await response.json();
-      setArticles(data.articles || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching articles:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -111,6 +152,13 @@ export default function KnowledgePage() {
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
+  };
+
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+    setSort(columnId, newOrder);
   };
 
   const handleCreateArticle = async () => {
@@ -126,11 +174,13 @@ export default function KnowledgePage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchArticles();
+        toast.showSuccess('Article created successfully');
+        refresh();
+        fetchStats();
         resetForm();
       }
     } catch (error) {
-      console.error('Error creating article:', error);
+      toast.showError('Error creating article');
     }
   };
 
@@ -141,9 +191,11 @@ export default function KnowledgePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'PUBLISHED', publishedAt: new Date().toISOString() }),
       });
-      fetchArticles();
+      toast.showSuccess('Article published successfully');
+      refresh();
+      fetchStats();
     } catch (error) {
-      console.error('Error publishing article:', error);
+      toast.showError('Error publishing article');
     }
   };
 
@@ -156,6 +208,46 @@ export default function KnowledgePage() {
       keywords: '',
       isPublic: false,
     });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedArticle) return;
+    try {
+      const response = await fetch(`/api/knowledge/${selectedArticle.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      if (!response.ok) throw new Error('Failed to update article');
+      toast.showSuccess('Article updated successfully');
+      setEditMode(false);
+      setDetailOpen(false);
+      refresh();
+      fetchStats();
+    } catch (err: any) {
+      toast.showError(err.message);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedArticle) return;
+    const confirmed = await confirm({
+      title: 'Delete Article',
+      message: `Are you sure you want to delete "${selectedArticle.title}"?`,
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      const response = await fetch(`/api/knowledge/${selectedArticle.id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete');
+      toast.showSuccess('Article deleted successfully');
+      setDetailOpen(false);
+      refresh();
+      fetchStats();
+    } catch (err: any) {
+      toast.showError(err.message);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -171,31 +263,45 @@ export default function KnowledgePage() {
     }
   };
 
-  const filteredArticles = tabValue === 0
-    ? articles
-    : articles.filter((a) => {
-        if (tabValue === 1) return a.status === 'PUBLISHED';
-        if (tabValue === 2) return a.status === 'DRAFT';
-        if (tabValue === 3) return a.isPublic;
-        return true;
-      });
+  const filteredArticles = useMemo(() => {
+    if (tabValue === 0) return articles;
+    return articles.filter((a) => {
+      if (tabValue === 1) return a.status === 'PUBLISHED';
+      if (tabValue === 2) return a.status === 'DRAFT';
+      if (tabValue === 3) return a.isPublic;
+      return true;
+    });
+  }, [articles, tabValue]);
 
   const handleSearch = () => {
-    fetchArticles();
+    refresh();
   };
+
+  const exportData = filteredArticles.map((a) => ({
+    Title: a.title,
+    'Article Number': a.articleNumber,
+    Category: a.category?.name || '-',
+    Views: a.viewCount,
+    Status: a.status,
+    Visibility: a.isPublic ? 'Public' : 'Internal',
+    Updated: new Date(a.updatedAt).toLocaleDateString(),
+  }));
 
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Knowledge Base</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Article
-          </Button>
+          <Box display="flex" gap={2} alignItems="center">
+            <ExportToolbar data={exportData} filename="knowledge-articles" title="Knowledge Articles" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Article
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -285,98 +391,101 @@ export default function KnowledgePage() {
         </Paper>
 
         {/* Articles Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Article</TableCell>
-                <TableCell>Category</TableCell>
-                <TableCell>Views</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Visibility</TableCell>
-                <TableCell>Updated</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredArticles.map((article) => (
-                <TableRow
-                  key={article.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    setSelectedArticle(article);
-                    setDetailOpen(true);
-                  }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {article.title}
-                    </Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      {article.articleNumber}
-                    </Typography>
-                    {article.keywords && article.keywords.length > 0 && (
-                      <Box sx={{ mt: 0.5 }}>
-                        {article.keywords.slice(0, 3).map((keyword, idx) => (
-                          <Chip
-                            key={idx}
-                            label={keyword}
+        {loading ? (
+          <TableSkeleton rows={5} columns={7} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={columns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {filteredArticles.map((article) => (
+                  <TableRow
+                    key={article.id}
+                    hover
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      setSelectedArticle(article);
+                      setDetailOpen(true);
+                    }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {article.title}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        {article.articleNumber}
+                      </Typography>
+                      {article.keywords && article.keywords.length > 0 && (
+                        <Box sx={{ mt: 0.5 }}>
+                          {article.keywords.slice(0, 3).map((keyword, idx) => (
+                            <Chip
+                              key={idx}
+                              label={keyword}
+                              size="small"
+                              variant="outlined"
+                              sx={{ mr: 0.5, mb: 0.5, fontSize: '0.65rem' }}
+                            />
+                          ))}
+                        </Box>
+                      )}
+                    </TableCell>
+                    <TableCell>{article.category?.name || '-'}</TableCell>
+                    <TableCell>{article.viewCount || 0}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={article.status}
+                        color={getStatusColor(article.status) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {article.isPublic ? (
+                        <Chip label="Public" color="info" size="small" icon={<PublicIcon />} />
+                      ) : (
+                        <Chip label="Internal" size="small" variant="outlined" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {new Date(article.updatedAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {article.status === 'DRAFT' && (
+                        <Tooltip title="Publish">
+                          <IconButton
                             size="small"
-                            variant="outlined"
-                            sx={{ mr: 0.5, mb: 0.5, fontSize: '0.65rem' }}
-                          />
-                        ))}
-                      </Box>
-                    )}
-                  </TableCell>
-                  <TableCell>{article.category?.name || '-'}</TableCell>
-                  <TableCell>{article.viewCount || 0}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={article.status}
-                      color={getStatusColor(article.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {article.isPublic ? (
-                      <Chip label="Public" color="info" size="small" icon={<PublicIcon />} />
-                    ) : (
-                      <Chip label="Internal" size="small" variant="outlined" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {new Date(article.updatedAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {article.status === 'DRAFT' && (
-                      <Tooltip title="Publish">
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePublishArticle(article.id);
-                          }}
-                        >
-                          <PublishIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredArticles.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    No articles found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                            color="success"
+                            onClick={() => handlePublishArticle(article.id)}
+                          >
+                            <PublishIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredArticles.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center">
+                      No articles found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+        <PaginationControls
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Box>
 
       {/* Create Article Dialog */}
@@ -465,22 +574,24 @@ export default function KnowledgePage() {
       </Dialog>
 
       {/* Article Detail Dialog */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="lg" fullWidth>
+      <Dialog open={detailOpen} onClose={() => { setDetailOpen(false); setEditMode(false); }} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
-              <Typography variant="h6">{selectedArticle?.title}</Typography>
+              <Typography variant="h6">
+                {editMode ? 'Edit Article' : selectedArticle?.title}
+              </Typography>
               <Typography variant="body2" color="textSecondary">
                 {selectedArticle?.articleNumber} | {selectedArticle?.category?.name || 'Uncategorized'}
               </Typography>
             </Box>
-            <IconButton onClick={() => setDetailOpen(false)}>
+            <IconButton onClick={() => { setDetailOpen(false); setEditMode(false); }}>
               <CloseIcon />
             </IconButton>
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedArticle && (
+          {selectedArticle && !editMode && (
             <Box>
               <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
                 <Chip
@@ -542,21 +653,106 @@ export default function KnowledgePage() {
               </Grid>
             </Box>
           )}
+          {selectedArticle && editMode && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+              <TextField
+                fullWidth
+                label="Title"
+                value={editFormData.title}
+                onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+              />
+              <TextField
+                fullWidth
+                label="Summary"
+                value={editFormData.summary}
+                onChange={(e) => setEditFormData({ ...editFormData, summary: e.target.value })}
+                multiline
+                rows={2}
+              />
+              <TextField
+                fullWidth
+                label="Content"
+                value={editFormData.content}
+                onChange={(e) => setEditFormData({ ...editFormData, content: e.target.value })}
+                multiline
+                rows={10}
+              />
+              <FormControl fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                  label="Status"
+                >
+                  <MenuItem value="DRAFT">Draft</MenuItem>
+                  <MenuItem value="PUBLISHED">Published</MenuItem>
+                  <MenuItem value="ARCHIVED">Archived</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={editFormData.isPublic}
+                    onChange={(e) => setEditFormData({ ...editFormData, isPublic: e.target.checked })}
+                  />
+                }
+                label="Make this article publicly visible"
+              />
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
-          {selectedArticle && selectedArticle.status === 'DRAFT' && (
-            <Button
-              color="success"
-              variant="contained"
-              onClick={() => {
-                handlePublishArticle(selectedArticle.id);
-                setDetailOpen(false);
-              }}
-            >
-              Publish
-            </Button>
+          {selectedArticle && !editMode && (
+            <>
+              {selectedArticle.status === 'DRAFT' && (
+                <Button
+                  color="success"
+                  variant="contained"
+                  onClick={() => {
+                    handlePublishArticle(selectedArticle.id);
+                    setDetailOpen(false);
+                  }}
+                >
+                  Publish
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  setEditFormData({
+                    title: selectedArticle.title,
+                    content: selectedArticle.content,
+                    summary: selectedArticle.summary || '',
+                    status: selectedArticle.status,
+                    isPublic: selectedArticle.isPublic,
+                  });
+                  setEditMode(true);
+                }}
+                color="primary"
+                startIcon={<EditIcon />}
+              >
+                Edit
+              </Button>
+              <Button onClick={handleDelete} color="error" startIcon={<DeleteIcon />}>
+                Delete
+              </Button>
+            </>
           )}
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
+          {selectedArticle && editMode && (
+            <>
+              <Button
+                onClick={handleSaveEdit}
+                variant="contained"
+                color="primary"
+                disabled={!editFormData.title || !editFormData.content}
+              >
+                Save
+              </Button>
+              <Button onClick={() => setEditMode(false)}>
+                Cancel
+              </Button>
+            </>
+          )}
+          <Button onClick={() => { setDetailOpen(false); setEditMode(false); }}>Close</Button>
         </DialogActions>
       </Dialog>
     </DashboardLayout>

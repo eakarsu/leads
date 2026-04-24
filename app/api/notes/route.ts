@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const contactId = searchParams.get('contactId');
@@ -19,6 +22,8 @@ export async function GET(req: NextRequest) {
     if (contactId) where.contactId = contactId;
     if (leadId) where.leadId = leadId;
     if (opportunityId) where.opportunityId = opportunityId;
+
+    const total = await prisma.note.count({ where });
 
     const notes = await prisma.note.findMany({
       where,
@@ -31,12 +36,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(notes);
+    return NextResponse.json(buildPaginatedResponse(notes, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching notes:', error);
     return NextResponse.json(

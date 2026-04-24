@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,18 +11,22 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const formType = searchParams.get('formType');
 
     const where: any = {};
     if (formType) where.formType = formType;
 
+    const total = await prisma.webForm.count({ where });
+
     const forms = await prisma.webForm.findMany({
       where,
       include: {
         _count: { select: { submissions: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Calculate stats
@@ -33,7 +38,7 @@ export async function GET(req: NextRequest) {
       totalSubmissions: forms.reduce((sum, f) => sum + (f.submissionCount || 0), 0),
     };
 
-    return NextResponse.json({ forms, stats });
+    return NextResponse.json(buildPaginatedResponse(forms, total, paginationParams, { stats }));
   } catch (error: any) {
     console.error('Error fetching web forms:', error);
     return NextResponse.json({ error: 'Failed to fetch forms' }, { status: 500 });

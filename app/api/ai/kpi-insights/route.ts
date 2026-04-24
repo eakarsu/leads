@@ -75,14 +75,8 @@ Format as JSON:
       const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : aiResponse;
       parsedResponse = JSON.parse(jsonStr);
     } catch (parseError) {
-      console.warn('Failed to parse AI response as JSON:', parseError);
-      parsedResponse = {
-        keyInsights: ['Analysis available in raw format'],
-        optimizationOpportunities: [],
-        benchmarkComparison: aiResponse.substring(0, 300),
-        summary: 'See full analysis for details',
-        rawResponse: aiResponse,
-      };
+      console.error('Failed to parse AI response as JSON:', parseError);
+      throw new Error('AI returned invalid JSON response for KPI insights');
     }
 
     return NextResponse.json({

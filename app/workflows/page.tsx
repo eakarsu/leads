@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Box,
   Card,
@@ -10,10 +10,8 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Chip,
-  CircularProgress,
   Alert,
   Paper,
   Button,
@@ -25,15 +23,17 @@ import {
   DialogActions,
   TextField,
   MenuItem,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface WorkflowAction {
   type: string;
@@ -64,15 +64,25 @@ interface Workflow {
   updatedAt: string;
 }
 
+const columns: Column[] = [
+  { id: 'name', label: 'Name' },
+  { id: 'objectType', label: 'Object Type' },
+  { id: 'triggerType', label: 'Trigger' },
+  { id: 'actions', label: 'Actions', sortable: false },
+  { id: 'isActive', label: 'Active', sortable: false },
+  { id: 'rowActions', label: 'Actions', sortable: false, align: 'right' },
+];
+
 export default function WorkflowsPage() {
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [openDialog, setOpenDialog] = useState(false);
   const [openDetailsDialog, setOpenDetailsDialog] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -83,21 +93,26 @@ export default function WorkflowsPage() {
     isActive: true,
   });
 
-  useEffect(() => {
-    fetchWorkflows();
-  }, []);
+  const {
+    data: workflows,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Workflow>({
+    url: '/api/workflows',
+    defaultSortBy: 'createdAt',
+    defaultSortOrder: 'desc',
+  });
 
-  const fetchWorkflows = async () => {
-    try {
-      const response = await fetch('/api/workflows');
-      if (!response.ok) throw new Error('Failed to fetch workflows');
-      const data = await response.json();
-      setWorkflows(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+    setSort(columnId, newOrder);
   };
 
   const handleToggleActive = async (workflow: Workflow) => {
@@ -109,9 +124,10 @@ export default function WorkflowsPage() {
       });
 
       if (!response.ok) throw new Error('Failed to update workflow');
-      fetchWorkflows();
+      toast.showSuccess(`Workflow ${!workflow.isActive ? 'activated' : 'deactivated'}`);
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
@@ -144,7 +160,7 @@ export default function WorkflowsPage() {
 
   const handleSaveWorkflow = async () => {
     if (!formData.name || !formData.conditions || !formData.actions) {
-      setError('Please fill in all required fields');
+      toast.showError('Please fill in all required fields');
       return;
     }
 
@@ -174,16 +190,23 @@ export default function WorkflowsPage() {
 
       setOpenDialog(false);
       setEditingWorkflow(null);
-      fetchWorkflows();
+      toast.showSuccess(editingWorkflow ? 'Workflow updated successfully' : 'Workflow created successfully');
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteWorkflow = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this workflow?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Workflow',
+      message: 'Are you sure you want to delete this workflow? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`/api/workflows/${id}`, {
@@ -191,9 +214,10 @@ export default function WorkflowsPage() {
       });
 
       if (!response.ok) throw new Error('Failed to delete workflow');
-      fetchWorkflows();
+      toast.showSuccess('Workflow deleted successfully');
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
@@ -223,119 +247,129 @@ export default function WorkflowsPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
-    );
-  }
+  const exportData = workflows.map((w) => ({
+    Name: w.name,
+    Description: w.description,
+    'Object Type': w.objectType,
+    Trigger: getTriggerTypeLabel(w.triggerType),
+    Actions: w.actions.length,
+    Active: w.isActive ? 'Yes' : 'No',
+    Created: new Date(w.createdAt).toLocaleDateString(),
+  }));
 
   return (
     <DashboardLayout>
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Workflow Automation</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-          >
-            New Workflow
-          </Button>
+          <Box display="flex" gap={2} alignItems="center">
+            <ExportToolbar data={exportData} filename="workflows" title="Workflows" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
+            >
+              New Workflow
+            </Button>
+          </Box>
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => {}}>
             {error}
           </Alert>
         )}
 
         <Card>
           <CardContent>
-            <TableContainer component={Paper} elevation={0}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Object Type</TableCell>
-                    <TableCell>Trigger</TableCell>
-                    <TableCell>Actions</TableCell>
-                    <TableCell>Active</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {workflows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} align="center">
-                        <Typography color="text.secondary">
-                          No workflows found. Create your first workflow to get started.
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    workflows.map((workflow) => (
-                      <TableRow
-                        key={workflow.id}
-                        hover
-                        sx={{ cursor: 'pointer' }}
-                        onClick={() => {
-                          setSelectedWorkflow(workflow);
-                          setOpenDetailsDialog(true);
-                        }}
-                      >
-                        <TableCell>
-                          <Box>
-                            <Typography variant="body1" fontWeight="medium">
-                              {workflow.name}
-                            </Typography>
-                            {workflow.description && (
-                              <Typography variant="body2" color="text.secondary">
-                                {workflow.description}
-                              </Typography>
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={workflow.objectType} size="small" />
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={getTriggerTypeLabel(workflow.triggerType)}
-                            size="small"
-                            color={getTriggerTypeColor(workflow.triggerType) as any}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">
-                            {workflow.actions.length} action{workflow.actions.length !== 1 ? 's' : ''}
+            {loading ? (
+              <TableSkeleton rows={5} columns={6} />
+            ) : (
+              <TableContainer component={Paper} elevation={0}>
+                <Table>
+                  <SortableTableHead
+                    columns={columns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {workflows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center">
+                          <Typography color="text.secondary">
+                            No workflows found. Create your first workflow to get started.
                           </Typography>
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Switch
-                            checked={workflow.isActive}
-                            onChange={() => handleToggleActive(workflow)}
-                            color="primary"
-                          />
-                        </TableCell>
-                        <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDeleteWorkflow(workflow.id)}
-                            color="error"
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    ) : (
+                      workflows.map((workflow) => (
+                        <TableRow
+                          key={workflow.id}
+                          hover
+                          sx={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            setSelectedWorkflow(workflow);
+                            setOpenDetailsDialog(true);
+                          }}
+                        >
+                          <TableCell>
+                            <Box>
+                              <Typography variant="body1" fontWeight="medium">
+                                {workflow.name}
+                              </Typography>
+                              {workflow.description && (
+                                <Typography variant="body2" color="text.secondary">
+                                  {workflow.description}
+                                </Typography>
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip label={workflow.objectType} size="small" />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={getTriggerTypeLabel(workflow.triggerType)}
+                              size="small"
+                              color={getTriggerTypeColor(workflow.triggerType) as any}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {workflow.actions.length} action{workflow.actions.length !== 1 ? 's' : ''}
+                            </Typography>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Switch
+                              checked={workflow.isActive}
+                              onChange={() => handleToggleActive(workflow)}
+                              color="primary"
+                            />
+                          </TableCell>
+                          <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteWorkflow(workflow.id)}
+                              color="error"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </CardContent>
         </Card>
 
@@ -433,57 +467,57 @@ export default function WorkflowsPage() {
                           </Typography>
                           {action.field && (
                             <Typography variant="body2" color="text.secondary">
-                              • Field: {action.field}
+                              Field: {action.field}
                             </Typography>
                           )}
                           {action.value && (
                             <Typography variant="body2" color="text.secondary">
-                              • Value: {action.value}
+                              Value: {action.value}
                             </Typography>
                           )}
                           {action.subject && (
                             <Typography variant="body2" color="text.secondary">
-                              • Subject: {action.subject}
+                              Subject: {action.subject}
                             </Typography>
                           )}
                           {action.priority && (
                             <Typography variant="body2" color="text.secondary">
-                              • Priority: {action.priority}
+                              Priority: {action.priority}
                             </Typography>
                           )}
                           {action.dueInDays !== undefined && (
                             <Typography variant="body2" color="text.secondary">
-                              • Due in: {action.dueInDays} days
+                              Due in: {action.dueInDays} days
                             </Typography>
                           )}
                           {action.template && (
                             <Typography variant="body2" color="text.secondary">
-                              • Template: {action.template}
+                              Template: {action.template}
                             </Typography>
                           )}
                           {action.to && (
                             <Typography variant="body2" color="text.secondary">
-                              • To: {action.to}
+                              To: {action.to}
                             </Typography>
                           )}
                           {action.activityType && (
                             <Typography variant="body2" color="text.secondary">
-                              • Activity Type: {action.activityType}
+                              Activity Type: {action.activityType}
                             </Typography>
                           )}
                           {action.content && (
                             <Typography variant="body2" color="text.secondary">
-                              • Content: {action.content}
+                              Content: {action.content}
                             </Typography>
                           )}
                           {action.recipient && (
                             <Typography variant="body2" color="text.secondary">
-                              • Recipient: {action.recipient}
+                              Recipient: {action.recipient}
                             </Typography>
                           )}
                           {action.message && (
                             <Typography variant="body2" color="text.secondary">
-                              • Message: {action.message}
+                              Message: {action.message}
                             </Typography>
                           )}
                         </Box>

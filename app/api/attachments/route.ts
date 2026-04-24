@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const contactId = searchParams.get('contactId');
@@ -20,11 +23,10 @@ export async function GET(req: NextRequest) {
     if (leadId) where.leadId = leadId;
     if (opportunityId) where.opportunityId = opportunityId;
 
+    const total = await prisma.attachment.count({ where });
+
     const attachments = await prisma.attachment.findMany({
       where,
-      orderBy: {
-        createdAt: 'desc',
-      },
       // Don't include fileData in list view to reduce payload size
       select: {
         id: true,
@@ -45,9 +47,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(attachments);
+    return NextResponse.json(buildPaginatedResponse(attachments, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching attachments:', error);
     return NextResponse.json(

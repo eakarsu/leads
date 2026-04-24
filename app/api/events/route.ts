@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,6 +11,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const ownerId = searchParams.get('ownerId');
     const contactId = searchParams.get('contactId');
@@ -17,18 +20,22 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    const where = {
+      ...(ownerId && { ownerId }),
+      ...(contactId && { contactId }),
+      ...(opportunityId && { opportunityId }),
+      ...(startDate && endDate && {
+        startTime: {
+          gte: new Date(startDate),
+          lte: new Date(endDate),
+        },
+      }),
+    };
+
+    const total = await prisma.event.count({ where });
+
     const events = await prisma.event.findMany({
-      where: {
-        ...(ownerId && { ownerId }),
-        ...(contactId && { contactId }),
-        ...(opportunityId && { opportunityId }),
-        ...(startDate && endDate && {
-          startTime: {
-            gte: new Date(startDate),
-            lte: new Date(endDate),
-          },
-        }),
-      },
+      where,
       include: {
         owner: {
           select: {
@@ -40,12 +47,10 @@ export async function GET(req: NextRequest) {
         contact: true,
         opportunity: true,
       },
-      orderBy: {
-        startTime: 'asc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(events);
+    return NextResponse.json(buildPaginatedResponse(events, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching events:', error);
     return NextResponse.json(

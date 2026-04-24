@@ -62,7 +62,7 @@ export default function NotesSection({
       const response = await fetch(`/api/notes?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch notes');
       const data = await response.json();
-      setNotes(data);
+      setNotes(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -120,18 +120,20 @@ export default function NotesSection({
     }
   };
 
-  const handleDeleteNote = async (noteId: string) => {
-    if (!confirm('Are you sure you want to delete this note?')) return;
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
+  const handleDeleteNote = async (noteId: string) => {
     try {
       const response = await fetch(`/api/notes/${noteId}`, {
         method: 'DELETE',
       });
 
       if (!response.ok) throw new Error('Failed to delete note');
+      setDeletingNoteId(null);
       fetchNotes();
     } catch (err: any) {
       setError(err.message);
+      setDeletingNoteId(null);
     }
   };
 
@@ -221,14 +223,27 @@ export default function NotesSection({
                         >
                           <EditIcon fontSize="small" />
                         </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleDeleteNote(note.id)}
-                          title="Delete"
-                          color="error"
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                        {deletingNoteId === note.id ? (
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="contained"
+                            onClick={() => handleDeleteNote(note.id)}
+                            onBlur={() => setDeletingNoteId(null)}
+                            sx={{ fontSize: '0.7rem', minWidth: 0, px: 1 }}
+                          >
+                            Confirm
+                          </Button>
+                        ) : (
+                          <IconButton
+                            size="small"
+                            onClick={() => setDeletingNoteId(note.id)}
+                            title="Delete"
+                            color="error"
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
                       </Box>
                     )}
                   </Box>

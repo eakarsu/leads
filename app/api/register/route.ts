@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { sendEmail } from '@/lib/email';
+import { emailVerificationEmail } from '@/lib/emailTemplates';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +19,6 @@ export async function POST(req: NextRequest) {
       password,
     } = body;
 
-    // Validation
     if (!businessSector || !companyName || !contactName || !email || !password) {
       return NextResponse.json(
         { error: 'Business sector, company name, contact name, email, and password are required' },
@@ -24,11 +26,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
-
+    const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       return NextResponse.json(
         { error: 'A user with this email already exists' },
@@ -36,12 +34,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create client company and user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Create client company
       const clientCompany = await tx.clientCompany.create({
         data: {
           name: companyName,
@@ -54,7 +49,6 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Create user and associate with client company
       const user = await tx.user.create({
         data: {
           email,
@@ -65,12 +59,30 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return { clientCompany, user };
+      // Create email verification token
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      await tx.emailVerificationToken.create({
+        data: { token, userId: user.id, expiresAt },
+      });
+
+      return { clientCompany, user, verificationToken: token };
     });
+
+    // Send verification email (non-blocking)
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const verifyUrl = `${baseUrl}/verify-email?token=${result.verificationToken}`;
+
+    sendEmail({
+      to: email,
+      subject: 'Verify Your Email - LeadGenFlow AI',
+      html: emailVerificationEmail(verifyUrl, contactName),
+    }).catch((err) => console.error('Failed to send verification email:', err));
 
     return NextResponse.json(
       {
-        message: 'Account created successfully',
+        message: 'Account created successfully. Please check your email to verify your account.',
         user: {
           id: result.user.id,
           email: result.user.email,

@@ -20,6 +20,7 @@ import {
   ListItemText,
   Divider,
   Chip,
+  TextField,
 } from '@mui/material';
 import {
   DataObject as DataIcon,
@@ -27,11 +28,16 @@ import {
   Warning as WarningIcon,
   Download as DownloadIcon,
   CloudUpload as ImportIcon,
+  Lock as LockIcon,
+  VerifiedUser as VerifiedIcon,
 } from '@mui/icons-material';
 import DashboardLayout from '@/components/DashboardLayout';
+import PasswordStrengthIndicator from '@/components/PasswordStrengthIndicator';
+import { useToast } from '@/components/ToastProvider';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const toast = useToast();
   const [generating, setGenerating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -41,6 +47,59 @@ export default function SettingsPage() {
   const [result, setResult] = useState<any>(null);
   const [importResult, setImportResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Change password state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      toast.showError('All password fields are required');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast.showError('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.showError('Password must be at least 8 characters');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to change password');
+
+      toast.showSuccess('Password changed successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (err: any) {
+      toast.showError(err.message);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    try {
+      const response = await fetch('/api/auth/resend-verification', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      toast.showSuccess('Verification email sent! Check your inbox.');
+    } catch (err: any) {
+      toast.showError(err.message);
+    }
+  };
 
   const handleGenerateDemoData = async () => {
     setShowConfirmDialog(false);
@@ -52,13 +111,8 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate demo data');
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to generate demo data');
       setResult(data);
       setShowResultDialog(true);
     } catch (err: any) {
@@ -70,7 +124,6 @@ export default function SettingsPage() {
 
   const handleDownloadData = () => {
     if (!result?.data) return;
-
     const jsonString = JSON.stringify(result.data, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -85,7 +138,6 @@ export default function SettingsPage() {
 
   const handleImportToDatabase = async () => {
     if (!result?.data) return;
-
     setShowImportConfirmDialog(false);
     setShowResultDialog(false);
     setImporting(true);
@@ -97,13 +149,8 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: result.data }),
       });
-
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import demo data');
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to import demo data');
       setImportResult(data);
       setShowImportResultDialog(true);
     } catch (err: any) {
@@ -113,36 +160,25 @@ export default function SettingsPage() {
     }
   };
 
-  // Direct import - generates and imports in one step
   const handleDirectImport = async () => {
     setImporting(true);
     setError(null);
 
     try {
-      // First generate the data
       const generateResponse = await fetch('/api/seed/all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-
       const generateData = await generateResponse.json();
+      if (!generateResponse.ok) throw new Error(generateData.error || 'Failed to generate demo data');
 
-      if (!generateResponse.ok) {
-        throw new Error(generateData.error || 'Failed to generate demo data');
-      }
-
-      // Then import it
       const importResponse = await fetch('/api/seed/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: generateData.data }),
       });
-
       const importData = await importResponse.json();
-
-      if (!importResponse.ok) {
-        throw new Error(importData.error || 'Failed to import demo data');
-      }
+      if (!importResponse.ok) throw new Error(importData.error || 'Failed to import demo data');
 
       setImportResult(importData);
       setShowImportResultDialog(true);
@@ -168,26 +204,12 @@ export default function SettingsPage() {
                   User Information
                 </Typography>
                 <Box sx={{ mt: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Name
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {session?.user?.name}
-                  </Typography>
-
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                    Email
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {session?.user?.email}
-                  </Typography>
-
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                    Role
-                  </Typography>
-                  <Typography variant="body1" gutterBottom>
-                    {session?.user?.role}
-                  </Typography>
+                  <Typography variant="body2" color="text.secondary">Name</Typography>
+                  <Typography variant="body1" gutterBottom>{session?.user?.name}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Email</Typography>
+                  <Typography variant="body1" gutterBottom>{session?.user?.email}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Role</Typography>
+                  <Typography variant="body1" gutterBottom>{session?.user?.role}</Typography>
                 </Box>
               </CardContent>
             </Card>
@@ -201,12 +223,90 @@ export default function SettingsPage() {
                 </Typography>
                 <Alert severity="info" sx={{ mt: 2 }}>
                   API keys and configuration are managed in the <code>.env</code> file.
-                  <br />
-                  <br />
+                  <br /><br />
                   <strong>OpenRouter API:</strong> Required for all AI features
                   <br />
                   <strong>Database:</strong> PostgreSQL connection configured
                 </Alert>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Security Section */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <LockIcon color="primary" />
+                  <Typography variant="h6">Change Password</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <TextField
+                    label="Current Password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    fullWidth
+                    size="small"
+                  />
+                  <TextField
+                    label="New Password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    fullWidth
+                    size="small"
+                  />
+                  <PasswordStrengthIndicator password={newPassword} />
+                  <TextField
+                    label="Confirm New Password"
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    fullWidth
+                    size="small"
+                    error={!!confirmNewPassword && newPassword !== confirmNewPassword}
+                    helperText={confirmNewPassword && newPassword !== confirmNewPassword ? 'Passwords do not match' : ''}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={handleChangePassword}
+                    disabled={changingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+                  >
+                    {changingPassword ? 'Changing...' : 'Change Password'}
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <VerifiedIcon color="primary" />
+                  <Typography variant="h6">Email Verification</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <Typography variant="body1">Status:</Typography>
+                  <Chip
+                    label="Verified"
+                    color="success"
+                    size="small"
+                    icon={<SuccessIcon />}
+                  />
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Your email address has been verified. You will receive important notifications at {session?.user?.email}.
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  sx={{ mt: 2 }}
+                  onClick={handleResendVerification}
+                >
+                  Resend Verification Email
+                </Button>
               </CardContent>
             </Card>
           </Grid>
@@ -285,27 +385,19 @@ export default function SettingsPage() {
                 </Typography>
                 <Grid container spacing={2} sx={{ mt: 1 }}>
                   <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Version
-                    </Typography>
+                    <Typography variant="body2" color="text.secondary">Version</Typography>
                     <Typography variant="body1">1.0.0</Typography>
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Platform
-                    </Typography>
+                    <Typography variant="body2" color="text.secondary">Platform</Typography>
                     <Typography variant="body1">LeadGenFlow AI</Typography>
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      AI Provider
-                    </Typography>
+                    <Typography variant="body2" color="text.secondary">AI Provider</Typography>
                     <Typography variant="body1">OpenRouter</Typography>
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Database
-                    </Typography>
+                    <Typography variant="body2" color="text.secondary">Database</Typography>
                     <Typography variant="body1">PostgreSQL with Prisma</Typography>
                   </Grid>
                 </Grid>
@@ -335,24 +427,12 @@ export default function SettingsPage() {
               This will generate approximately <strong>300+ sample records</strong> for preview:
             </Typography>
             <List dense sx={{ mt: 1 }}>
-              <ListItem>
-                <ListItemText primary="15 Client Companies (Partners & Customers)" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="20 Contacts (with Portal & Partner users)" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="20 Leads, 15 Opportunities, 15 Cases" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="12 each: Contracts, Quotes, Assets" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="10 each: Orders, Invoices, Entitlements, Products" />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Tasks, Events, Knowledge Articles, and more..." />
-              </ListItem>
+              <ListItem><ListItemText primary="15 Client Companies (Partners & Customers)" /></ListItem>
+              <ListItem><ListItemText primary="20 Contacts (with Portal & Partner users)" /></ListItem>
+              <ListItem><ListItemText primary="20 Leads, 15 Opportunities, 15 Cases" /></ListItem>
+              <ListItem><ListItemText primary="12 each: Contracts, Quotes, Assets" /></ListItem>
+              <ListItem><ListItemText primary="10 each: Orders, Invoices, Entitlements, Products" /></ListItem>
+              <ListItem><ListItemText primary="Tasks, Events, Knowledge Articles, and more..." /></ListItem>
             </List>
             <Alert severity="success" sx={{ mt: 2 }}>
               No data will be inserted into the database. This is preview only.
@@ -360,19 +440,12 @@ export default function SettingsPage() {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setShowConfirmDialog(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleGenerateDemoData} color="primary">
-              Preview Data
-            </Button>
+            <Button variant="contained" onClick={handleGenerateDemoData} color="primary">Preview Data</Button>
           </DialogActions>
         </Dialog>
 
         {/* Result Dialog */}
-        <Dialog
-          open={showResultDialog}
-          onClose={() => setShowResultDialog(false)}
-          maxWidth="sm"
-          fullWidth
-        >
+        <Dialog open={showResultDialog} onClose={() => setShowResultDialog(false)} maxWidth="sm" fullWidth>
           <DialogTitle>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SuccessIcon color="success" />
@@ -385,9 +458,7 @@ export default function SettingsPage() {
                 <Alert severity="info" sx={{ mb: 2 }}>
                   Generated <strong>{result.totalRecords}</strong> sample records (not saved to database)
                 </Alert>
-                <Typography variant="subtitle2" gutterBottom>
-                  Records generated by type:
-                </Typography>
+                <Typography variant="subtitle2" gutterBottom>Records generated by type:</Typography>
                 <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
                   <List dense>
                     {result.created && Object.entries(result.created).map(([key, value]) => (
@@ -395,9 +466,7 @@ export default function SettingsPage() {
                         <ListItemText
                           primary={
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="body2">
-                                {key.replace(/([A-Z])/g, ' $1').trim()}
-                              </Typography>
+                              <Typography variant="body2">{key.replace(/([A-Z])/g, ' $1').trim()}</Typography>
                               <Chip label={value as number} size="small" color="primary" />
                             </Box>
                           }
@@ -410,25 +479,9 @@ export default function SettingsPage() {
             )}
           </DialogContent>
           <DialogActions>
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadData}
-              color="primary"
-            >
-              Download JSON
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<ImportIcon />}
-              onClick={() => setShowImportConfirmDialog(true)}
-              color="success"
-            >
-              Import to Database
-            </Button>
-            <Button onClick={() => setShowResultDialog(false)}>
-              Close
-            </Button>
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleDownloadData} color="primary">Download JSON</Button>
+            <Button variant="contained" startIcon={<ImportIcon />} onClick={() => setShowImportConfirmDialog(true)} color="success">Import to Database</Button>
+            <Button onClick={() => setShowResultDialog(false)}>Close</Button>
           </DialogActions>
         </Dialog>
 
@@ -463,12 +516,7 @@ export default function SettingsPage() {
         </Dialog>
 
         {/* Import Result Dialog */}
-        <Dialog
-          open={showImportResultDialog}
-          onClose={() => setShowImportResultDialog(false)}
-          maxWidth="sm"
-          fullWidth
-        >
+        <Dialog open={showImportResultDialog} onClose={() => setShowImportResultDialog(false)} maxWidth="sm" fullWidth>
           <DialogTitle>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <SuccessIcon color="success" />
@@ -481,9 +529,7 @@ export default function SettingsPage() {
                 <Alert severity="success" sx={{ mb: 2 }}>
                   Imported <strong>{importResult.totalRecords}</strong> records into the database
                 </Alert>
-                <Typography variant="subtitle2" gutterBottom>
-                  Records imported by type:
-                </Typography>
+                <Typography variant="subtitle2" gutterBottom>Records imported by type:</Typography>
                 <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
                   <List dense>
                     {importResult.imported && Object.entries(importResult.imported).map(([key, value]) => (
@@ -491,9 +537,7 @@ export default function SettingsPage() {
                         <ListItemText
                           primary={
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="body2">
-                                {key.replace(/([A-Z])/g, ' $1').trim()}
-                              </Typography>
+                              <Typography variant="body2">{key.replace(/([A-Z])/g, ' $1').trim()}</Typography>
                               <Chip label={value as number} size="small" color="success" />
                             </Box>
                           }
@@ -506,12 +550,7 @@ export default function SettingsPage() {
             )}
           </DialogContent>
           <DialogActions>
-            <Button variant="contained" onClick={() => {
-              setShowImportResultDialog(false);
-              setResult(null);
-            }}>
-              Done
-            </Button>
+            <Button variant="contained" onClick={() => { setShowImportResultDialog(false); setResult(null); }}>Done</Button>
           </DialogActions>
         </Dialog>
 
@@ -520,23 +559,16 @@ export default function SettingsPage() {
           <Box
             sx={{
               position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
+              top: 0, left: 0, right: 0, bottom: 0,
               bgcolor: 'rgba(0, 0, 0, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
               zIndex: 9999,
             }}
           >
             <Card sx={{ p: 4, textAlign: 'center' }}>
               <CircularProgress size={60} sx={{ mb: 2 }} />
               <Typography variant="h6">Importing data to database...</Typography>
-              <Typography variant="body2" color="text.secondary">
-                This may take a few moments
-              </Typography>
+              <Typography variant="body2" color="text.secondary">This may take a few moments</Typography>
             </Card>
           </Box>
         )}

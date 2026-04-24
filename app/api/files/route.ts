@@ -189,7 +189,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, type, name, folderId, isPublic, newVersion } = body;
+    const { id, type, name, description, folderId, isPublic, newVersion } = body;
 
     if (type === 'folder') {
       const folder = await prisma.fileFolder.update({
@@ -203,14 +203,16 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(folder);
     }
 
-    // Update file
+    // Update file - build update data, only include fields that are provided
+    const fileUpdateData: Record<string, any> = {};
+    if (name !== undefined) fileUpdateData.name = name;
+    if (description !== undefined) fileUpdateData.description = description;
+    if (folderId !== undefined) fileUpdateData.folderId = folderId;
+    if (isPublic !== undefined) fileUpdateData.isPublic = isPublic;
+
     const file = await prisma.file.update({
       where: { id },
-      data: {
-        name,
-        folderId,
-        isPublic,
-      },
+      data: fileUpdateData,
     });
 
     // Add new version if provided

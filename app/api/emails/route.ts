@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { sendEmail, sendEmailFromTemplate } from '@/lib/email';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,19 +12,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const senderId = searchParams.get('senderId');
     const status = searchParams.get('status');
     const contactId = searchParams.get('contactId');
     const opportunityId = searchParams.get('opportunityId');
 
+    const where = {
+      ...(senderId && { senderId }),
+      ...(status && { status: status as any }),
+      ...(contactId && { contactId }),
+      ...(opportunityId && { opportunityId }),
+    };
+
+    const total = await prisma.email.count({ where });
+
     const emails = await prisma.email.findMany({
-      where: {
-        ...(senderId && { senderId }),
-        ...(status && { status: status as any }),
-        ...(contactId && { contactId }),
-        ...(opportunityId && { opportunityId }),
-      },
+      where,
       include: {
         sender: {
           select: {
@@ -33,12 +40,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(emails);
+    return NextResponse.json(buildPaginatedResponse(emails, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching emails:', error);
     return NextResponse.json(

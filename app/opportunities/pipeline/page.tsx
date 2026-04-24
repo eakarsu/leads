@@ -10,12 +10,12 @@ import {
   CircularProgress,
   Alert,
   Grid,
-  Chip,
-  Paper,
   Button,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DashboardLayout from '@/components/DashboardLayout';
+import KanbanCard from '@/components/KanbanCard';
+import KanbanColumn from '@/components/KanbanColumn';
 
 interface Opportunity {
   id: string;
@@ -51,6 +51,14 @@ interface PipelineData {
   totalCount: number;
 }
 
+const STAGE_PROBABILITY: Record<string, number> = {
+  PROSPECTING: 10,
+  QUALIFICATION: 25,
+  NEEDS_ANALYSIS: 50,
+  PROPOSAL: 65,
+  NEGOTIATION: 80,
+};
+
 export default function PipelineViewPage() {
   const router = useRouter();
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
@@ -83,28 +91,14 @@ export default function PipelineViewPage() {
     }).format(amount);
   };
 
-  const formatDate = (date: string | null) => {
-    if (!date) return 'No date';
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
   const getStageColor = (stage: string) => {
     switch (stage) {
-      case 'PROSPECTING':
-        return '#e3f2fd';
-      case 'QUALIFICATION':
-        return '#fff3e0';
-      case 'NEEDS_ANALYSIS':
-        return '#e8f5e9';
-      case 'PROPOSAL':
-        return '#f3e5f5';
-      case 'NEGOTIATION':
-        return '#fce4ec';
-      default:
-        return '#f5f5f5';
+      case 'PROSPECTING': return '#e3f2fd';
+      case 'QUALIFICATION': return '#fff3e0';
+      case 'NEEDS_ANALYSIS': return '#e8f5e9';
+      case 'PROPOSAL': return '#f3e5f5';
+      case 'NEGOTIATION': return '#fce4ec';
+      default: return '#f5f5f5';
     }
   };
 
@@ -115,6 +109,77 @@ export default function PipelineViewPage() {
     { key: 'PROPOSAL', label: 'Proposal' },
     { key: 'NEGOTIATION', label: 'Negotiation' },
   ];
+
+  const handleDragStart = (e: React.DragEvent, oppId: string) => {
+    e.dataTransfer.setData('text/plain', oppId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDrop = async (oppId: string, newStage: string) => {
+    if (!pipelineData) return;
+
+    // Find the opportunity and its current stage
+    let currentStage = '';
+    let opp: Opportunity | undefined;
+    for (const [stage, opps] of Object.entries(pipelineData.pipeline)) {
+      const found = opps.find((o) => o.id === oppId);
+      if (found) {
+        currentStage = stage;
+        opp = found;
+        break;
+      }
+    }
+
+    if (!opp || currentStage === newStage) return;
+
+    const newProbability = STAGE_PROBABILITY[newStage] || opp.probability;
+
+    // Optimistic update
+    setPipelineData((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev };
+      const pipeline = { ...updated.pipeline };
+
+      // Remove from old stage
+      const oldStageOpps = [...(pipeline[currentStage as keyof typeof pipeline] || [])];
+      pipeline[currentStage as keyof typeof pipeline] = oldStageOpps.filter((o) => o.id !== oppId) as any;
+
+      // Add to new stage with updated probability
+      const movedOpp = { ...opp!, probability: newProbability };
+      const newStageOpps = [...(pipeline[newStage as keyof typeof pipeline] || [])];
+      newStageOpps.push(movedOpp);
+      pipeline[newStage as keyof typeof pipeline] = newStageOpps as any;
+
+      // Recalculate totals
+      const totals = { ...updated.totals };
+      totals[currentStage as keyof typeof totals] = pipeline[currentStage as keyof typeof pipeline].reduce(
+        (sum: number, o: Opportunity) => sum + (o.amount * o.probability) / 100, 0
+      );
+      totals[newStage as keyof typeof totals] = pipeline[newStage as keyof typeof pipeline].reduce(
+        (sum: number, o: Opportunity) => sum + (o.amount * o.probability) / 100, 0
+      );
+
+      const totalWeightedValue = Object.values(totals).reduce((sum, v) => sum + v, 0);
+
+      return { ...updated, pipeline: pipeline as any, totals, totalWeightedValue };
+    });
+
+    // API call to persist
+    try {
+      const response = await fetch(`/api/opportunities/${oppId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: newStage, probability: newProbability }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update stage');
+      }
+    } catch (err: any) {
+      setError(err.message);
+      // Revert on failure
+      fetchPipeline();
+    }
+  };
 
   if (loading) {
     return (
@@ -139,34 +204,22 @@ export default function PipelineViewPage() {
       <Box>
         <Box mb={3}>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="h4">
-              Sales Pipeline
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => router.push('/opportunities')}
-            >
+            <Typography variant="h4">Sales Pipeline</Typography>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => router.push('/opportunities')}>
               New Opportunity
             </Button>
           </Box>
           <Box display="flex" gap={3} mt={2}>
             <Card sx={{ minWidth: 200 }}>
               <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  Total Opportunities
-                </Typography>
+                <Typography variant="body2" color="text.secondary">Total Opportunities</Typography>
                 <Typography variant="h5">{pipelineData.totalCount}</Typography>
               </CardContent>
             </Card>
             <Card sx={{ minWidth: 200 }}>
               <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  Total Weighted Value
-                </Typography>
-                <Typography variant="h5" color="primary">
-                  {formatCurrency(pipelineData.totalWeightedValue)}
-                </Typography>
+                <Typography variant="body2" color="text.secondary">Total Weighted Value</Typography>
+                <Typography variant="h5" color="primary">{formatCurrency(pipelineData.totalWeightedValue)}</Typography>
               </CardContent>
             </Card>
           </Box>
@@ -185,80 +238,34 @@ export default function PipelineViewPage() {
 
             return (
               <Grid size={{ xs: 12, sm: 6, md: 2.4 }} key={stage.key}>
-                <Paper
-                  sx={{
-                    p: 2,
-                    bgcolor: getStageColor(stage.key),
-                    minHeight: 500,
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}
-                  elevation={2}
+                <KanbanColumn
+                  stageKey={stage.key}
+                  label={stage.label}
+                  count={opportunities.length}
+                  totalValue={total}
+                  bgColor={getStageColor(stage.key)}
+                  onDrop={handleDrop}
                 >
-                  <Box mb={2}>
-                    <Typography variant="h6" gutterBottom>
-                      {stage.label}
+                  {opportunities.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary" align="center">
+                      No opportunities
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {opportunities.length} deals
-                    </Typography>
-                    <Typography variant="h6" color="primary" sx={{ mt: 1 }}>
-                      {formatCurrency(total)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      weighted value
-                    </Typography>
-                  </Box>
-
-                  <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-                    {opportunities.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary" align="center">
-                        No opportunities
-                      </Typography>
-                    ) : (
-                      opportunities.map((opp) => (
-                        <Card
-                          key={opp.id}
-                          sx={{
-                            mb: 1.5,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            '&:hover': {
-                              transform: 'translateY(-2px)',
-                              boxShadow: 3,
-                            },
-                          }}
-                          onClick={() => router.push(`/opportunities/${opp.id}`)}
-                        >
-                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                            <Typography variant="subtitle2" gutterBottom noWrap>
-                              {opp.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" display="block">
-                              {opp.client.name}
-                            </Typography>
-                            <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
-                              <Typography variant="body2" fontWeight="bold" color="primary">
-                                {formatCurrency(opp.amount)}
-                              </Typography>
-                              <Chip
-                                label={`${opp.probability}%`}
-                                size="small"
-                                sx={{ height: 20, fontSize: '0.7rem' }}
-                              />
-                            </Box>
-                            <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
-                              {formatDate(opp.expectedCloseDate)}
-                            </Typography>
-                            <Typography variant="caption" color="secondary" display="block">
-                              {formatCurrency((opp.amount * opp.probability) / 100)} weighted
-                            </Typography>
-                          </CardContent>
-                        </Card>
-                      ))
-                    )}
-                  </Box>
-                </Paper>
+                  ) : (
+                    opportunities.map((opp) => (
+                      <KanbanCard
+                        key={opp.id}
+                        id={opp.id}
+                        name={opp.name}
+                        amount={opp.amount}
+                        probability={opp.probability}
+                        closeDate={opp.expectedCloseDate}
+                        clientName={opp.client.name}
+                        onDragStart={handleDragStart}
+                        onClick={() => router.push(`/opportunities/${opp.id}`)}
+                      />
+                    ))
+                  )}
+                </KanbanColumn>
               </Grid>
             );
           })}

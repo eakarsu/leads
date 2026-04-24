@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
@@ -20,6 +23,8 @@ export async function GET(req: NextRequest) {
       where.members = { some: { userId: session.user.id } };
     }
 
+    const total = await prisma.chatterGroup.count({ where });
+
     const groups = await prisma.chatterGroup.findMany({
       where,
       include: {
@@ -29,7 +34,7 @@ export async function GET(req: NextRequest) {
           take: 1,
         },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch owner data separately
@@ -48,7 +53,7 @@ export async function GET(req: NextRequest) {
       members: undefined,
     }));
 
-    return NextResponse.json(groupsWithMembership);
+    return NextResponse.json(buildPaginatedResponse(groupsWithMembership, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching chatter groups:', error);
     return NextResponse.json({ error: 'Failed to fetch groups' }, { status: 500 });

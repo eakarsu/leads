@@ -46,55 +46,80 @@ export async function POST(req: NextRequest) {
     }
 
     // Build where clause from filters
+    // Supports both array format [{field, operator, value}] and object format {field: {operator, value}}
     const where: any = {};
-    if (filters && typeof filters === 'object') {
-      for (const [field, condition] of Object.entries(filters)) {
-        if (condition && typeof condition === 'object') {
-          const { operator, value } = condition as { operator: string; value: any };
-          switch (operator) {
-            case 'equals':
-              where[field] = value;
-              break;
-            case 'contains':
-              where[field] = { contains: value, mode: 'insensitive' };
-              break;
-            case 'startsWith':
-              where[field] = { startsWith: value, mode: 'insensitive' };
-              break;
-            case 'endsWith':
-              where[field] = { endsWith: value, mode: 'insensitive' };
-              break;
-            case 'gt':
-              where[field] = { gt: value };
-              break;
-            case 'gte':
-              where[field] = { gte: value };
-              break;
-            case 'lt':
-              where[field] = { lt: value };
-              break;
-            case 'lte':
-              where[field] = { lte: value };
-              break;
-            case 'in':
-              where[field] = { in: Array.isArray(value) ? value : [value] };
-              break;
-            case 'notIn':
-              where[field] = { notIn: Array.isArray(value) ? value : [value] };
-              break;
-            case 'isNull':
-              where[field] = value ? null : { not: null };
-              break;
+
+    const applyFilter = (field: string, operator: string, value: any) => {
+      // Skip relation fields in where clause (e.g., "owner.name")
+      if (field.includes('.')) return;
+
+      switch (operator) {
+        case 'equals':
+          where[field] = value;
+          break;
+        case 'not_equals':
+          where[field] = { not: value };
+          break;
+        case 'contains':
+          where[field] = { contains: value, mode: 'insensitive' };
+          break;
+        case 'starts_with':
+        case 'startsWith':
+          where[field] = { startsWith: value, mode: 'insensitive' };
+          break;
+        case 'endsWith':
+          where[field] = { endsWith: value, mode: 'insensitive' };
+          break;
+        case 'greater_than':
+        case 'gt':
+          where[field] = { gt: isNaN(Number(value)) ? value : Number(value) };
+          break;
+        case 'gte':
+          where[field] = { gte: isNaN(Number(value)) ? value : Number(value) };
+          break;
+        case 'less_than':
+        case 'lt':
+          where[field] = { lt: isNaN(Number(value)) ? value : Number(value) };
+          break;
+        case 'lte':
+          where[field] = { lte: isNaN(Number(value)) ? value : Number(value) };
+          break;
+        case 'in':
+          where[field] = { in: Array.isArray(value) ? value : [value] };
+          break;
+        case 'notIn':
+          where[field] = { notIn: Array.isArray(value) ? value : [value] };
+          break;
+        case 'isNull':
+          where[field] = value ? null : { not: null };
+          break;
+      }
+    };
+
+    if (filters) {
+      if (Array.isArray(filters)) {
+        // Array format from report builder: [{field, operator, value}]
+        for (const f of filters) {
+          if (f.field && f.operator && f.value !== undefined && f.value !== '') {
+            applyFilter(f.field, f.operator, f.value);
           }
-        } else if (condition !== undefined && condition !== '') {
-          // Simple equality filter
-          where[field] = condition;
+        }
+      } else if (typeof filters === 'object') {
+        // Object format: {field: {operator, value}} or {field: value}
+        for (const [field, condition] of Object.entries(filters)) {
+          if (condition && typeof condition === 'object' && 'operator' in (condition as any)) {
+            const { operator, value } = condition as { operator: string; value: any };
+            applyFilter(field, operator, value);
+          } else if (condition !== undefined && condition !== '') {
+            where[field] = condition;
+          }
         }
       }
     }
 
-    // Build select clause from columns
+    // Build select clause from columns and include relations
     let select: any = undefined;
+    const includes: any = {};
     if (columns && Array.isArray(columns) && columns.length > 0) {
       select = {};
       for (const col of columns) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,15 +11,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get('clientId');
     const campaignId = searchParams.get('campaignId');
 
+    const where = {
+      ...(clientId && { clientId }),
+      ...(campaignId && { campaignId }),
+    };
+
+    const total = await prisma.reportSnapshot.count({ where });
+
     const reports = await prisma.reportSnapshot.findMany({
-      where: {
-        ...(clientId && { clientId }),
-        ...(campaignId && { campaignId }),
-      },
+      where,
       include: {
         client: {
           select: {
@@ -33,12 +40,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        periodEnd: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(reports);
+    return NextResponse.json(buildPaginatedResponse(reports, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching reports:', error);
     return NextResponse.json(

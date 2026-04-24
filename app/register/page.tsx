@@ -17,62 +17,19 @@ import {
   StepLabel,
 } from '@mui/material';
 import Link from 'next/link';
+import PasswordStrengthIndicator from '@/components/PasswordStrengthIndicator';
+import { validateForm, registerFormSchema } from '@/lib/validation';
 
 const businessSectors = [
-  {
-    value: 'HOME_SERVICES',
-    label: 'Home Services',
-    description: 'HVAC, Roofing, Solar, Plumbing, etc.',
-    leadValue: '$50-$200 per lead',
-  },
-  {
-    value: 'LEGAL_SERVICES',
-    label: 'Legal Services',
-    description: 'Personal Injury, Family Law, etc.',
-    leadValue: '$200-$500 per lead',
-  },
-  {
-    value: 'FINANCIAL_SERVICES',
-    label: 'Financial Services',
-    description: 'Insurance, Mortgages, Loans, etc.',
-    leadValue: '$100-$300 per lead',
-  },
-  {
-    value: 'REAL_ESTATE',
-    label: 'Real Estate',
-    description: 'Buyers, Sellers, Agents, etc.',
-    leadValue: '$30-$100 per lead',
-  },
-  {
-    value: 'HEALTHCARE',
-    label: 'Healthcare',
-    description: 'Dentists, Plastic Surgery, Rehab, etc.',
-    leadValue: '$100-$400 per lead',
-  },
-  {
-    value: 'B2B_SAAS',
-    label: 'B2B SaaS',
-    description: 'Enterprise Software, Cloud Services, etc.',
-    leadValue: '$50-$200 per lead',
-  },
-  {
-    value: 'EDUCATION',
-    label: 'Education',
-    description: 'Online Courses, Colleges, Training, etc.',
-    leadValue: '$15-$50 per lead',
-  },
-  {
-    value: 'AUTOMOTIVE',
-    label: 'Automotive',
-    description: 'Auto Sales, Auto Services, etc.',
-    leadValue: '$20-$50 per lead',
-  },
-  {
-    value: 'GENERAL',
-    label: 'General / Other',
-    description: 'Other business types',
-    leadValue: 'Varies',
-  },
+  { value: 'HOME_SERVICES', label: 'Home Services', description: 'HVAC, Roofing, Solar, Plumbing, etc.', leadValue: '$50-$200 per lead' },
+  { value: 'LEGAL_SERVICES', label: 'Legal Services', description: 'Personal Injury, Family Law, etc.', leadValue: '$200-$500 per lead' },
+  { value: 'FINANCIAL_SERVICES', label: 'Financial Services', description: 'Insurance, Mortgages, Loans, etc.', leadValue: '$100-$300 per lead' },
+  { value: 'REAL_ESTATE', label: 'Real Estate', description: 'Buyers, Sellers, Agents, etc.', leadValue: '$30-$100 per lead' },
+  { value: 'HEALTHCARE', label: 'Healthcare', description: 'Dentists, Plastic Surgery, Rehab, etc.', leadValue: '$100-$400 per lead' },
+  { value: 'B2B_SAAS', label: 'B2B SaaS', description: 'Enterprise Software, Cloud Services, etc.', leadValue: '$50-$200 per lead' },
+  { value: 'EDUCATION', label: 'Education', description: 'Online Courses, Colleges, Training, etc.', leadValue: '$15-$50 per lead' },
+  { value: 'AUTOMOTIVE', label: 'Automotive', description: 'Auto Sales, Auto Services, etc.', leadValue: '$20-$50 per lead' },
+  { value: 'GENERAL', label: 'General / Other', description: 'Other business types', leadValue: 'Varies' },
 ];
 
 const steps = ['Business Sector', 'Company Info', 'Account Details'];
@@ -81,6 +38,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -97,8 +55,8 @@ export default function RegisterPage() {
 
   const handleNext = () => {
     setError('');
+    setFieldErrors({});
 
-    // Validation for each step
     if (activeStep === 0 && !formData.businessSector) {
       setError('Please select a business sector');
       return;
@@ -112,16 +70,11 @@ export default function RegisterPage() {
     }
 
     if (activeStep === 2) {
-      if (!formData.email || !formData.password || !formData.confirmPassword) {
-        setError('All fields are required');
-        return;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        setError('Passwords do not match');
-        return;
-      }
-      if (formData.password.length < 8) {
-        setError('Password must be at least 8 characters');
+      const result = validateForm(registerFormSchema, formData);
+      if (!result.success) {
+        setFieldErrors(result.errors);
+        const firstError = Object.values(result.errors)[0];
+        setError(firstError);
         return;
       }
       handleSubmit();
@@ -152,7 +105,6 @@ export default function RegisterPage() {
         throw new Error(data.error || 'Registration failed');
       }
 
-      // Redirect to login page with success message
       router.push('/login?registered=true');
     } catch (err: any) {
       setError(err.message);
@@ -223,7 +175,7 @@ export default function RegisterPage() {
                       <Box>
                         <Typography variant="body1">{sector.label}</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {sector.description} • {sector.leadValue}
+                          {sector.description} &bull; {sector.leadValue}
                         </Typography>
                       </Box>
                     </MenuItem>
@@ -261,7 +213,6 @@ export default function RegisterPage() {
                   margin="normal"
                   required
                 />
-
                 <TextField
                   fullWidth
                   label="Industry"
@@ -270,7 +221,6 @@ export default function RegisterPage() {
                   margin="normal"
                   placeholder="e.g., HVAC, Personal Injury Law, Insurance"
                 />
-
                 <TextField
                   fullWidth
                   label="Website"
@@ -279,7 +229,6 @@ export default function RegisterPage() {
                   margin="normal"
                   placeholder="https://yourwebsite.com"
                 />
-
                 <TextField
                   fullWidth
                   label="Contact Name"
@@ -288,7 +237,6 @@ export default function RegisterPage() {
                   margin="normal"
                   required
                 />
-
                 <TextField
                   fullWidth
                   label="Phone"
@@ -318,6 +266,8 @@ export default function RegisterPage() {
                   margin="normal"
                   required
                   autoComplete="email"
+                  error={!!fieldErrors.email}
+                  helperText={fieldErrors.email}
                 />
 
                 <TextField
@@ -329,8 +279,10 @@ export default function RegisterPage() {
                   margin="normal"
                   required
                   autoComplete="new-password"
-                  helperText="Minimum 8 characters"
+                  error={!!fieldErrors.password}
+                  helperText={fieldErrors.password}
                 />
+                <PasswordStrengthIndicator password={formData.password} />
 
                 <TextField
                   fullWidth
@@ -341,6 +293,8 @@ export default function RegisterPage() {
                   margin="normal"
                   required
                   autoComplete="new-password"
+                  error={!!fieldErrors.confirmPassword}
+                  helperText={fieldErrors.confirmPassword}
                 />
               </Box>
             )}

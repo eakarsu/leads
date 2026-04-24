@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 // Get custom object definitions
 export async function GET(req: NextRequest) {
@@ -11,8 +12,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const includeFields = searchParams.get('includeFields') === 'true';
+
+    const total = await prisma.customObject.count();
 
     const customObjects = await prisma.customObject.findMany({
       include: includeFields
@@ -25,7 +30,7 @@ export async function GET(req: NextRequest) {
         : {
             _count: { select: { fields: true, records: true } },
           },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Calculate stats
@@ -39,7 +44,7 @@ export async function GET(req: NextRequest) {
       totalRecords: customObjects.reduce((sum, o) => sum + (o._count?.records || 0), 0),
     };
 
-    return NextResponse.json({ objects: customObjects, stats });
+    return NextResponse.json(buildPaginatedResponse(customObjects, total, paginationParams, { stats }));
   } catch (error: any) {
     console.error('Error fetching custom objects:', error);
     return NextResponse.json({ error: 'Failed to fetch custom objects' }, { status: 500 });

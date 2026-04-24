@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Box,
@@ -12,10 +12,8 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Chip,
-  CircularProgress,
   Alert,
   Dialog,
   DialogTitle,
@@ -27,8 +25,18 @@ import {
   IconButton,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
 import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Contact {
   id: string;
@@ -61,17 +69,44 @@ interface Contact {
   };
 }
 
+const columns: Column[] = [
+  { id: 'lastName', label: 'Name' },
+  { id: 'email', label: 'Email' },
+  { id: 'phone', label: 'Phone' },
+  { id: 'title', label: 'Title' },
+  { id: 'client', label: 'Company/Account', sortable: false },
+  { id: 'owner', label: 'Owner', sortable: false },
+  { id: 'isPrimary', label: 'Primary' },
+  { id: 'actions', label: 'Actions', sortable: false, align: 'center' },
+];
+
 export default function ContactsPage() {
   const router = useRouter();
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+
   const [clients, setClients] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [clientFilter, setClientFilter] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('');
   const [isPrimaryFilter, setIsPrimaryFilter] = useState('');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [openDetailDialog, setOpenDetailDialog] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    title: '',
+    department: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Sort state
+  const [sortBy, setSortByState] = useState('createdAt');
+  const [sortOrder, setSortOrderState] = useState<'asc' | 'desc'>('desc');
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -87,42 +122,42 @@ export default function ContactsPage() {
     notes: '',
   });
 
+  // Build extra params from filters
+  const extraParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    if (clientFilter) params.clientId = clientFilter;
+    if (ownerFilter) params.ownerId = ownerFilter;
+    if (isPrimaryFilter) params.isPrimary = isPrimaryFilter;
+    return params;
+  }, [clientFilter, ownerFilter, isPrimaryFilter]);
+
+  const {
+    data: contacts,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Contact>({
+    url: '/api/contacts',
+    defaultSortBy: sortBy,
+    defaultSortOrder: sortOrder,
+    extraParams,
+  });
+
   useEffect(() => {
-    fetchContacts();
     fetchClients();
     fetchUsers();
   }, []);
-
-  useEffect(() => {
-    fetchContacts();
-  }, [clientFilter, ownerFilter, isPrimaryFilter]);
-
-  const fetchContacts = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (clientFilter) params.append('clientId', clientFilter);
-      if (ownerFilter) params.append('ownerId', ownerFilter);
-      if (isPrimaryFilter) params.append('isPrimary', isPrimaryFilter);
-
-      const url = `/api/contacts${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch contacts');
-      const data = await response.json();
-      setContacts(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchClients = async () => {
     try {
       const response = await fetch('/api/clients');
       if (!response.ok) throw new Error('Failed to fetch clients');
       const data = await response.json();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching clients:', err);
     }
@@ -137,6 +172,13 @@ export default function ContactsPage() {
     } catch (err: any) {
       console.error('Error fetching users:', err);
     }
+  };
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByState(col);
+    setSortOrderState(newOrder);
+    setSort(col, newOrder);
   };
 
   const handleCreateContact = async () => {
@@ -163,53 +205,108 @@ export default function ContactsPage() {
         ownerId: '',
         notes: '',
       });
-      fetchContacts();
+      toast.showSuccess('Contact created successfully');
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
   const handleDeleteContact = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this contact?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Contact',
+      message: 'Are you sure you want to delete this contact? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/contacts/${id}`, {
-        method: 'DELETE',
-      });
-
+      const response = await fetch(`/api/contacts/${id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete contact');
-      fetchContacts();
+      toast.showSuccess('Contact deleted successfully');
+      setOpenDetailDialog(false);
+      setSelectedContact(null);
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
-    );
-  }
+  const handleRowClick = (contact: Contact) => {
+    setSelectedContact(contact);
+    setEditMode(false);
+    setOpenDetailDialog(true);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedContact) return;
+    setEditFormData({
+      firstName: selectedContact.firstName,
+      lastName: selectedContact.lastName,
+      email: selectedContact.email,
+      phone: selectedContact.phone || '',
+      title: selectedContact.title || '',
+      department: selectedContact.department || '',
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedContact) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch(`/api/contacts/${selectedContact.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      if (!response.ok) throw new Error('Failed to update contact');
+      toast.showSuccess('Contact updated successfully');
+      setEditMode(false);
+      setOpenDetailDialog(false);
+      setSelectedContact(null);
+      refresh();
+    } catch (err: any) {
+      toast.showError(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const exportData = useMemo(() => {
+    return contacts.map((c) => ({
+      'First Name': c.firstName,
+      'Last Name': c.lastName,
+      Email: c.email,
+      Phone: c.phone || '',
+      Title: c.title || '',
+      Department: c.department || '',
+      Company: c.client.name,
+      Owner: c.owner.name,
+      Primary: c.isPrimary ? 'Yes' : 'No',
+    }));
+  }, [contacts]);
 
   return (
     <DashboardLayout>
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Contacts</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setOpenDialog(true)}
-          >
-            New Contact
-          </Button>
+          <Box display="flex" gap={1} alignItems="center">
+            <ExportToolbar data={exportData} filename="contacts" title="Contacts" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenDialog(true)}
+            >
+              New Contact
+            </Button>
+          </Box>
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
         )}
@@ -275,73 +372,250 @@ export default function ContactsPage() {
 
         <Card>
           <CardContent>
-            <TableContainer component={Paper} elevation={0}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell>Phone</TableCell>
-                    <TableCell>Title</TableCell>
-                    <TableCell>Company/Account</TableCell>
-                    <TableCell>Owner</TableCell>
-                    <TableCell>Primary</TableCell>
-                    <TableCell align="center">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {contacts.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} align="center">
-                        <Typography color="text.secondary">
-                          No contacts found. Create your first contact!
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    contacts.map((contact) => (
-                      <TableRow
-                        key={contact.id}
-                        hover
-                        sx={{ cursor: 'pointer' }}
-                        onClick={() => router.push(`/contacts/${contact.id}`)}
-                      >
-                        <TableCell>
-                          {contact.firstName} {contact.lastName}
-                        </TableCell>
-                        <TableCell>{contact.email}</TableCell>
-                        <TableCell>{contact.phone || '-'}</TableCell>
-                        <TableCell>{contact.title || '-'}</TableCell>
-                        <TableCell>
-                          {contact.account
-                            ? `${contact.account.firstName} ${contact.account.lastName}`
-                            : contact.client.name}
-                        </TableCell>
-                        <TableCell>{contact.owner.name}</TableCell>
-                        <TableCell>
-                          {contact.isPrimary && (
-                            <Chip label="Primary" size="small" color="primary" />
-                          )}
-                        </TableCell>
-                        <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDeleteContact(contact.id)}
-                            title="Delete"
-                            color="error"
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+            {loading ? (
+              <TableSkeleton rows={5} columns={8} />
+            ) : (
+              <TableContainer component={Paper} elevation={0}>
+                <Table>
+                  <SortableTableHead
+                    columns={columns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {contacts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} align="center">
+                          <Typography color="text.secondary">
+                            No contacts found. Create your first contact!
+                          </Typography>
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    ) : (
+                      contacts.map((contact) => (
+                        <TableRow
+                          key={contact.id}
+                          hover
+                          sx={{
+                            cursor: 'pointer',
+                            '&:hover': { backgroundColor: 'action.hover' },
+                          }}
+                          onClick={() => handleRowClick(contact)}
+                        >
+                          <TableCell>
+                            {contact.firstName} {contact.lastName}
+                          </TableCell>
+                          <TableCell>{contact.email}</TableCell>
+                          <TableCell>{contact.phone || '-'}</TableCell>
+                          <TableCell>{contact.title || '-'}</TableCell>
+                          <TableCell>
+                            {contact.account
+                              ? `${contact.account.firstName} ${contact.account.lastName}`
+                              : contact.client.name}
+                          </TableCell>
+                          <TableCell>{contact.owner.name}</TableCell>
+                          <TableCell>
+                            {contact.isPrimary && (
+                              <Chip label="Primary" size="small" color="primary" />
+                            )}
+                          </TableCell>
+                          <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setSelectedContact(contact);
+                                setEditFormData({
+                                  firstName: contact.firstName,
+                                  lastName: contact.lastName,
+                                  email: contact.email,
+                                  phone: contact.phone || '',
+                                  title: contact.title || '',
+                                  department: contact.department || '',
+                                });
+                                setEditMode(true);
+                                setOpenDetailDialog(true);
+                              }}
+                              title="Edit"
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteContact(contact.id)}
+                              title="Delete"
+                              color="error"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </CardContent>
         </Card>
 
+        {/* Detail / Quick-Action Dialog */}
+        <Dialog
+          open={openDetailDialog}
+          onClose={() => { setOpenDetailDialog(false); setEditMode(false); }}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>{editMode ? 'Edit Contact' : 'Contact Details'}</DialogTitle>
+          <DialogContent>
+            {selectedContact && !editMode && (
+              <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Name</Typography>
+                  <Typography variant="body1">
+                    {selectedContact.firstName} {selectedContact.lastName}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Email</Typography>
+                  <Typography variant="body1">{selectedContact.email}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Phone</Typography>
+                  <Typography variant="body1">{selectedContact.phone || '-'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Title</Typography>
+                  <Typography variant="body1">{selectedContact.title || '-'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Department</Typography>
+                  <Typography variant="body1">{selectedContact.department || '-'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Company/Account</Typography>
+                  <Typography variant="body1">
+                    {selectedContact.account
+                      ? `${selectedContact.account.firstName} ${selectedContact.account.lastName}`
+                      : selectedContact.client.name}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Owner</Typography>
+                  <Typography variant="body1">{selectedContact.owner.name}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Primary</Typography>
+                  {selectedContact.isPrimary ? (
+                    <Chip label="Primary" size="small" color="primary" />
+                  ) : (
+                    <Typography variant="body1">No</Typography>
+                  )}
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Related Counts</Typography>
+                  <Typography variant="body2">
+                    Opportunities: {selectedContact._count.opportunities} | Tasks: {selectedContact._count.tasks} | Events: {selectedContact._count.events}
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+            {selectedContact && editMode && (
+              <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  label="First Name"
+                  value={editFormData.firstName}
+                  onChange={(e) => setEditFormData({ ...editFormData, firstName: e.target.value })}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Last Name"
+                  value={editFormData.lastName}
+                  onChange={(e) => setEditFormData({ ...editFormData, lastName: e.target.value })}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Email"
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Phone"
+                  value={editFormData.phone}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  label="Title"
+                  value={editFormData.title}
+                  onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  label="Department"
+                  value={editFormData.department}
+                  onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                  fullWidth
+                />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {editMode ? (
+              <>
+                <Button
+                  startIcon={<CancelIcon />}
+                  onClick={() => setEditMode(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSaveEdit}
+                  disabled={editSaving || !editFormData.firstName || !editFormData.lastName || !editFormData.email}
+                >
+                  {editSaving ? 'Saving...' : 'Save'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={() => { setOpenDetailDialog(false); setEditMode(false); }}>Close</Button>
+                <Button
+                  variant="contained"
+                  startIcon={<EditIcon />}
+                  onClick={handleStartEdit}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="contained"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  onClick={() => {
+                    if (selectedContact) handleDeleteContact(selectedContact.id);
+                  }}
+                >
+                  Delete
+                </Button>
+              </>
+            )}
+          </DialogActions>
+        </Dialog>
+
+        {/* Create Contact Dialog */}
         <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
           <DialogTitle>Create New Contact</DialogTitle>
           <DialogContent>

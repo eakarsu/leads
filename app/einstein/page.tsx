@@ -88,6 +88,14 @@ interface Account {
   healthStatus?: string;
 }
 
+interface Contact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  title: string | null;
+  client: { name: string } | null;
+}
+
 interface Opportunity {
   id: string;
   name: string;
@@ -103,6 +111,7 @@ export default function EinsteinPage() {
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -127,6 +136,7 @@ export default function EinsteinPage() {
   const [transcriptInput, setTranscriptInput] = useState('');
   const [activityCapture, setActivityCapture] = useState<any[]>([]);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [events, setEvents] = useState<any[]>([]);
   const [caseSubject, setCaseSubject] = useState('');
   const [caseDescription, setCaseDescription] = useState('');
   const [caseClassification, setCaseClassification] = useState<any>(null);
@@ -142,12 +152,16 @@ export default function EinsteinPage() {
     if (tabValue === 3) fetchOpportunities();
     if (tabValue === 4) fetchAccounts();
     if (tabValue === 6) fetchEmails();
+    if (tabValue === 9) { fetchEmails(); fetchEvents(); }
+    if (tabValue === 12) fetchAnalytics();
   }, [tabValue]);
 
   useEffect(() => {
     if (emailDialogOpen) {
       if (leads.length === 0) fetchLeads();
       if (accounts.length === 0) fetchAccounts();
+      if (contacts.length === 0) fetchContacts();
+      if (opportunities.length === 0) fetchOpportunities();
     }
   }, [emailDialogOpen]);
 
@@ -167,10 +181,10 @@ export default function EinsteinPage() {
 
   const fetchForecasts = async () => {
     try {
-      const response = await fetch('/api/revenue-forecasts');
+      const response = await fetch('/api/ai/generate-forecast');
       if (!response.ok) return;
       const data = await response.json();
-      setForecasts(data);
+      setForecasts(data.forecasts || []);
     } catch (err: any) {
       // Silently fail
     }
@@ -182,7 +196,8 @@ export default function EinsteinPage() {
       const response = await fetch('/api/leads');
       if (!response.ok) throw new Error('Failed to fetch leads');
       const data = await response.json();
-      setLeads(data.slice(0, 10)); // Top 10 leads
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setLeads(arr.slice(0, 10)); // Top 10 leads
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -196,11 +211,107 @@ export default function EinsteinPage() {
       const response = await fetch('/api/clients');
       if (!response.ok) throw new Error('Failed to fetch accounts');
       const data = await response.json();
-      setAccounts(data.slice(0, 10)); // Top 10 accounts
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setAccounts(arr.slice(0, 10)); // Top 10 accounts
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch('/api/events');
+      if (!response.ok) throw new Error('Failed to fetch events');
+      const data = await response.json();
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setEvents(arr.slice(0, 10));
+    } catch (err: any) {
+      console.error('Error fetching events:', err);
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    if (analyticsData) return;
+    try {
+      const [leadsRes, oppsRes] = await Promise.all([
+        fetch('/api/leads'),
+        fetch('/api/opportunities'),
+      ]);
+      const leadsJson = await leadsRes.json();
+      const oppsJson = await oppsRes.json();
+      const allLeads = Array.isArray(leadsJson) ? leadsJson : leadsJson.data || [];
+      const allOpps = Array.isArray(oppsJson) ? oppsJson : oppsJson.data || [];
+
+      if (leads.length === 0) setLeads(allLeads.slice(0, 10));
+      if (opportunities.length === 0) setOpportunities(allOpps.slice(0, 50));
+
+      const totalLeads = allLeads.length;
+      const wonLeads = allLeads.filter((l: any) => l.status === 'WON').length;
+      const qualifiedLeads = allLeads.filter((l: any) => l.status === 'QUALIFIED' || l.status === 'WON').length;
+      const conversionRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
+      const qualificationRate = totalLeads > 0 ? Math.round((qualifiedLeads / totalLeads) * 100) : 0;
+
+      const totalOpps = allOpps.length;
+      const closedWon = allOpps.filter((o: any) => o.stage === 'CLOSED_WON').length;
+      const closedLost = allOpps.filter((o: any) => o.stage === 'CLOSED_LOST').length;
+      const openOpps = allOpps.filter((o: any) => o.stage !== 'CLOSED_WON' && o.stage !== 'CLOSED_LOST');
+      const winRate = (closedWon + closedLost) > 0 ? Math.round((closedWon / (closedWon + closedLost)) * 100) : 0;
+      const avgProbability = openOpps.length > 0 ? Math.round(openOpps.reduce((s: number, o: any) => s + (o.probability || 0), 0) / openOpps.length) : 0;
+      const pipelineValue = openOpps.reduce((s: number, o: any) => s + (o.amount || 0), 0);
+      const healthScore = Math.round((winRate * 0.4) + (avgProbability * 0.3) + (Math.min(conversionRate * 2, 30)));
+
+      const prompt = `Analyze this CRM performance data and provide 3 concise, specific AI-powered insights:
+
+Lead Metrics: ${totalLeads} total leads, ${wonLeads} won (${conversionRate}% conversion), ${qualifiedLeads} qualified (${qualificationRate}% qualification rate)
+Opportunity Metrics: ${totalOpps} total, ${closedWon} won, ${closedLost} lost (${winRate}% win rate), ${openOpps.length} open, $${pipelineValue.toLocaleString()} pipeline value, ${avgProbability}% avg probability
+
+Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
+["<insight 1>", "<insight 2>", "<insight 3>"]`;
+
+      const aiRes = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: prompt }),
+      });
+      let aiInsights: string[] = [];
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        const content = aiData.response || aiData.message || '';
+        try {
+          const match = content.match(/\[[\s\S]*\]/);
+          if (match) aiInsights = JSON.parse(match[0]);
+        } catch { /* use empty */ }
+      }
+
+      setAnalyticsData({
+        conversionRate,
+        qualificationRate,
+        winRate,
+        avgProbability,
+        pipelineValue,
+        healthScore: Math.min(healthScore, 100),
+        totalLeads,
+        totalOpps,
+        closedWon,
+        closedLost,
+        aiInsights,
+      });
+    } catch (err: any) {
+      console.error('Error fetching analytics:', err);
+    }
+  };
+
+  const fetchContacts = async () => {
+    try {
+      const response = await fetch('/api/contacts');
+      if (!response.ok) throw new Error('Failed to fetch contacts');
+      const data = await response.json();
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setContacts(arr.slice(0, 20));
+    } catch (err: any) {
+      console.error('Error fetching contacts:', err);
     }
   };
 
@@ -209,7 +320,7 @@ export default function EinsteinPage() {
       const response = await fetch('/api/emails');
       if (!response.ok) throw new Error('Failed to fetch emails');
       const data = await response.json();
-      setEmails(data);
+      setEmails(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching emails:', err);
     }
@@ -221,7 +332,8 @@ export default function EinsteinPage() {
       const response = await fetch('/api/opportunities');
       if (!response.ok) throw new Error('Failed to fetch opportunities');
       const data = await response.json();
-      setOpportunities(data.slice(0, 50)); // Top 50 opportunities
+      const oppArr = Array.isArray(data) ? data : data.data || [];
+      setOpportunities(oppArr.slice(0, 50)); // Top 50 opportunities
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1469,9 +1581,9 @@ Customer: Thanks, bye.`)}
                     <Typography variant="h6">Email Sync Status</Typography>
                   </Box>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
-                    <Chip label="Connected" color="success" size="small" />
+                    <Chip label={emails.length > 0 ? 'Active' : 'No Emails'} color={emails.length > 0 ? 'success' : 'default'} size="small" />
                     <Typography variant="body2" color="text.secondary">
-                      Gmail Connected
+                      {emails.length > 0 ? `${emails.length} emails in system` : 'No email data available'}
                     </Typography>
                   </Box>
                   <Divider sx={{ my: 2 }} />
@@ -1479,40 +1591,27 @@ Customer: Thanks, bye.`)}
                     Recent Email Activities
                   </Typography>
                   <List dense>
-                    <ListItem>
-                      <Box width="100%">
-                        <Typography variant="body2" fontWeight="bold">
-                          Sent: RE: Proposal Review
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          To: john.doe@acme.com • 2 hours ago • Auto-captured
-                        </Typography>
-                      </Box>
-                    </ListItem>
-                    <ListItem>
-                      <Box width="100%">
-                        <Typography variant="body2" fontWeight="bold">
-                          Received: Meeting Follow-up
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          From: jane.smith@tech.com • 5 hours ago • Auto-captured
-                        </Typography>
-                      </Box>
-                    </ListItem>
-                    <ListItem>
-                      <Box width="100%">
-                        <Typography variant="body2" fontWeight="bold">
-                          Sent: Product Demo Invitation
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          To: mike@startup.io • Yesterday • Auto-captured
-                        </Typography>
-                      </Box>
-                    </ListItem>
+                    {emails.length === 0 && (
+                      <ListItem>
+                        <Typography variant="body2" color="text.secondary">No emails found. Create emails in Email Center first.</Typography>
+                      </ListItem>
+                    )}
+                    {emails.slice(0, 5).map((email: any) => (
+                      <ListItem key={email.id}>
+                        <Box width="100%">
+                          <Typography variant="body2" fontWeight="bold">
+                            {email.status === 'SENT' ? 'Sent' : email.status}: {email.subject}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            To: {email.toAddress} {email.sentAt ? `• ${new Date(email.sentAt).toLocaleDateString()}` : ''} • {email.status}
+                          </Typography>
+                        </Box>
+                      </ListItem>
+                    ))}
                   </List>
                   <Box mt={2}>
                     <Typography variant="caption" color="text.secondary">
-                      12 emails auto-captured this week
+                      {emails.length} emails tracked
                     </Typography>
                   </Box>
                 </CardContent>
@@ -1526,62 +1625,56 @@ Customer: Thanks, bye.`)}
                     <Typography variant="h6">Calendar Sync Status</Typography>
                   </Box>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
-                    <Chip label="Connected" color="success" size="small" />
+                    <Chip label={events.length > 0 ? 'Active' : 'No Events'} color={events.length > 0 ? 'success' : 'default'} size="small" />
                     <Typography variant="body2" color="text.secondary">
-                      Google Calendar
+                      {events.length > 0 ? `${events.length} events in system` : 'No calendar events available'}
                     </Typography>
                   </Box>
                   <Divider sx={{ my: 2 }} />
                   <Typography variant="subtitle2" gutterBottom>
-                    Upcoming Synced Events
+                    Upcoming Events
                   </Typography>
                   <List dense>
-                    <ListItem>
-                      <Box width="100%">
-                        <Typography variant="body2" fontWeight="bold">
-                          Demo Call - Acme Corp
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Today 2:00 PM • 30 min • Auto-synced
-                        </Typography>
-                      </Box>
-                    </ListItem>
-                    <ListItem>
-                      <Box width="100%">
-                        <Typography variant="body2" fontWeight="bold">
-                          Quarterly Review Meeting
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Tomorrow 10:00 AM • 1 hour • Auto-synced
-                        </Typography>
-                      </Box>
-                    </ListItem>
-                    <ListItem>
-                      <Box width="100%">
-                        <Typography variant="body2" fontWeight="bold">
-                          Client Check-in - TechStart
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Friday 3:00 PM • 30 min • Auto-synced
-                        </Typography>
-                      </Box>
-                    </ListItem>
+                    {events.length === 0 && (
+                      <ListItem>
+                        <Typography variant="body2" color="text.secondary">No events found. Create events in the Calendar first.</Typography>
+                      </ListItem>
+                    )}
+                    {events.slice(0, 5).map((event: any) => {
+                      const start = new Date(event.startTime);
+                      const end = new Date(event.endTime);
+                      const durationMin = Math.round((end.getTime() - start.getTime()) / 60000);
+                      return (
+                        <ListItem key={event.id}>
+                          <Box width="100%">
+                            <Typography variant="body2" fontWeight="bold">
+                              {event.subject}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {start.toLocaleDateString()} {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {durationMin} min{event.location ? ` • ${event.location}` : ''}
+                            </Typography>
+                          </Box>
+                        </ListItem>
+                      );
+                    })}
                   </List>
                   <Box mt={2}>
                     <Typography variant="caption" color="text.secondary">
-                      8 calendar events synced this week
+                      {events.length} events tracked
                     </Typography>
                   </Box>
                 </CardContent>
               </Card>
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <Alert severity="success">
+              <Alert severity={emails.length > 0 || events.length > 0 ? 'success' : 'info'}>
                 <Typography variant="body2" fontWeight="bold" gutterBottom>
-                  Activity Capture is Active
+                  {emails.length > 0 || events.length > 0 ? 'Activity Capture is Active' : 'No Activities Captured Yet'}
                 </Typography>
                 <Typography variant="body2">
-                  Einstein is automatically capturing and logging your emails and calendar events to relevant CRM records. All activities are being matched to contacts, leads, and opportunities using AI.
+                  {emails.length > 0 || events.length > 0
+                    ? `Tracking ${emails.length} emails and ${events.length} calendar events from your CRM records.`
+                    : 'No emails or events found. Create emails in Email Center and events in Calendar to see activity tracking here.'}
                 </Typography>
               </Alert>
             </Grid>
@@ -1808,21 +1901,27 @@ Customer: Thanks, bye.`)}
                         <Typography variant="subtitle2" gutterBottom>
                           Lead Conversion Trend
                         </Typography>
-                        <Box display="flex" alignItems="center" gap={2} mt={2}>
-                          <Box flex={1}>
-                            <Typography variant="caption" color="text.secondary">This Month</Typography>
-                            <LinearProgress variant="determinate" value={65} sx={{ mt: 0.5, mb: 0.5 }} />
-                            <Typography variant="caption">65% conversion rate</Typography>
-                          </Box>
-                        </Box>
-                        <Box display="flex" alignItems="center" gap={2} mt={1}>
-                          <Box flex={1}>
-                            <Typography variant="caption" color="text.secondary">Last Month</Typography>
-                            <LinearProgress variant="determinate" value={58} sx={{ mt: 0.5, mb: 0.5 }} color="success" />
-                            <Typography variant="caption">58% conversion rate</Typography>
-                          </Box>
-                        </Box>
-                        <Chip label="+12% improvement" color="success" size="small" sx={{ mt: 1 }} />
+                        {analyticsData ? (
+                          <>
+                            <Box display="flex" alignItems="center" gap={2} mt={2}>
+                              <Box flex={1}>
+                                <Typography variant="caption" color="text.secondary">Conversion Rate (Won / Total)</Typography>
+                                <LinearProgress variant="determinate" value={analyticsData.conversionRate} sx={{ mt: 0.5, mb: 0.5 }} />
+                                <Typography variant="caption">{analyticsData.conversionRate}% conversion rate ({analyticsData.totalLeads} leads)</Typography>
+                              </Box>
+                            </Box>
+                            <Box display="flex" alignItems="center" gap={2} mt={1}>
+                              <Box flex={1}>
+                                <Typography variant="caption" color="text.secondary">Qualification Rate</Typography>
+                                <LinearProgress variant="determinate" value={analyticsData.qualificationRate} sx={{ mt: 0.5, mb: 0.5 }} color="success" />
+                                <Typography variant="caption">{analyticsData.qualificationRate}% qualification rate</Typography>
+                              </Box>
+                            </Box>
+                            <Chip label={`${analyticsData.winRate}% win rate (${analyticsData.closedWon}W / ${analyticsData.closedLost}L)`} color={analyticsData.winRate >= 50 ? 'success' : 'warning'} size="small" sx={{ mt: 1 }} />
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Loading analytics...</Typography>
+                        )}
                       </Paper>
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }}>
@@ -1830,17 +1929,23 @@ Customer: Thanks, bye.`)}
                         <Typography variant="subtitle2" gutterBottom>
                           Pipeline Health Score
                         </Typography>
-                        <Box textAlign="center" py={2}>
-                          <Typography variant="h2" fontWeight="bold" color="success.main">
-                            87
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Excellent
-                          </Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          Based on deal velocity, win rates, and activity levels
-                        </Typography>
+                        {analyticsData ? (
+                          <>
+                            <Box textAlign="center" py={2}>
+                              <Typography variant="h2" fontWeight="bold" color={analyticsData.healthScore >= 70 ? 'success.main' : analyticsData.healthScore >= 40 ? 'warning.main' : 'error.main'}>
+                                {analyticsData.healthScore}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {analyticsData.healthScore >= 70 ? 'Excellent' : analyticsData.healthScore >= 40 ? 'Fair' : 'Needs Attention'}
+                              </Typography>
+                            </Box>
+                            <Typography variant="caption" color="text.secondary">
+                              Based on {analyticsData.winRate}% win rate, {analyticsData.avgProbability}% avg probability, ${analyticsData.pipelineValue?.toLocaleString()} pipeline
+                            </Typography>
+                          </>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Loading analytics...</Typography>
+                        )}
                       </Paper>
                     </Grid>
                     <Grid size={{ xs: 12 }}>
@@ -1849,24 +1954,22 @@ Customer: Thanks, bye.`)}
                           AI-Powered Insights
                         </Typography>
                         <List dense>
-                          <ListItem>
-                            <LightbulbIcon color="warning" sx={{ mr: 1 }} />
-                            <Typography variant="body2">
-                              Your average deal cycle decreased by 15% this quarter - great job!
-                            </Typography>
-                          </ListItem>
-                          <ListItem>
-                            <LightbulbIcon color="info" sx={{ mr: 1 }} />
-                            <Typography variant="body2">
-                              Tech industry opportunities have 23% higher win rate than average
-                            </Typography>
-                          </ListItem>
-                          <ListItem>
-                            <LightbulbIcon color="success" sx={{ mr: 1 }} />
-                            <Typography variant="body2">
-                              Response time under 2 hours increases close rate by 35%
-                            </Typography>
-                          </ListItem>
+                          {analyticsData?.aiInsights?.length > 0 ? (
+                            analyticsData.aiInsights.map((insight: string, i: number) => (
+                              <ListItem key={i}>
+                                <LightbulbIcon color={i === 0 ? 'warning' : i === 1 ? 'info' : 'success'} sx={{ mr: 1 }} />
+                                <Typography variant="body2">{insight}</Typography>
+                              </ListItem>
+                            ))
+                          ) : analyticsData ? (
+                            <ListItem>
+                              <Typography variant="body2" color="text.secondary">No AI insights available. Ensure OpenRouter API is configured.</Typography>
+                            </ListItem>
+                          ) : (
+                            <ListItem>
+                              <Typography variant="body2" color="text.secondary">Loading AI insights...</Typography>
+                            </ListItem>
+                          )}
                         </List>
                       </Paper>
                     </Grid>
@@ -2219,14 +2322,14 @@ Customer: Thanks, bye.`)}
                   {lead.fullName} {lead.company ? `- ${lead.company}` : ''}
                 </MenuItem>
               ))}
-              {emailForm.recipientType === 'Contact' && accounts.map((account) => (
-                <MenuItem key={account.id} value={account.id}>
-                  {account.name}
+              {emailForm.recipientType === 'Contact' && contacts.map((contact) => (
+                <MenuItem key={contact.id} value={contact.id}>
+                  {contact.firstName} {contact.lastName} {contact.client ? `- ${contact.client.name}` : ''}
                 </MenuItem>
               ))}
-              {emailForm.recipientType === 'Opportunity' && accounts.map((account) => (
-                <MenuItem key={account.id} value={account.id}>
-                  {account.name}
+              {emailForm.recipientType === 'Opportunity' && opportunities.map((opp) => (
+                <MenuItem key={opp.id} value={opp.id}>
+                  {opp.name} - ${opp.amount?.toLocaleString()} ({opp.stage})
                 </MenuItem>
               ))}
             </TextField>

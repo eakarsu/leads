@@ -61,14 +61,8 @@ Format as JSON:
       const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : aiResponse;
       parsedResponse = JSON.parse(jsonStr);
     } catch (parseError) {
-      console.warn('Failed to parse AI response as JSON:', parseError);
-      parsedResponse = {
-        summary: aiResponse.substring(0, 300),
-        sentiment: 'Neutral',
-        sentimentReason: 'Unable to parse sentiment',
-        keyInsights: [],
-        nextSteps: [],
-      };
+      console.error('Failed to parse AI response as JSON:', parseError);
+      throw new Error('AI returned invalid JSON response for activity summary');
     }
 
     // Create a simple text summary for storage

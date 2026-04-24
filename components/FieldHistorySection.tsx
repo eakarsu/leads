@@ -61,7 +61,7 @@ export default function FieldHistorySection({
       const response = await fetch(`/api/field-history?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch field history');
       const data = await response.json();
-      setHistory(data);
+      setHistory(Array.isArray(data) ? data : data.data || []);
       setError(null);
     } catch (err: any) {
       console.error('Error fetching field history:', err);

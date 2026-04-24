@@ -11,9 +11,7 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
-  CircularProgress,
   Alert,
   Paper,
   Chip,
@@ -27,13 +25,19 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Assessment as ReportIcon,
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  ContentCopy as CopyIcon,
   PlayArrow as RunIcon,
   Download as ExportIcon,
   Public as PublicIcon,
@@ -42,8 +46,17 @@ import {
   BarChart as SummaryIcon,
   GridOn as MatrixIcon,
   Refresh as RefreshIcon,
+  Save as SaveIcon,
+  Cancel as CancelIcon,
 } from '@mui/icons-material';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Report {
   id: string;
@@ -84,55 +97,137 @@ const OBJECT_TYPES = [
   { value: 'Invoice', label: 'Invoices' },
 ];
 
+const tableColumns: Column[] = [
+  { id: 'name', label: 'Report Name' },
+  { id: 'reportType', label: 'Type' },
+  { id: 'objectType', label: 'Object' },
+  { id: 'columns', label: 'Columns', sortable: false },
+  { id: 'isPublic', label: 'Visibility' },
+  { id: 'createdAt', label: 'Created' },
+  { id: 'actions', label: 'Actions', sortable: false, align: 'right' },
+];
+
 export default function ReportsPage() {
   const router = useRouter();
-  const [reports, setReports] = useState<Report[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [stats, setStats] = useState<ReportStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [filterObjectType, setFilterObjectType] = useState('');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    description: '',
+    objectType: '',
+    reportType: '' as 'TABULAR' | 'SUMMARY' | 'MATRIX',
+    isPublic: false,
+  });
 
+  const {
+    data: reports,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Report>({
+    url: '/api/reports/builder',
+    defaultSortBy: 'createdAt',
+    defaultSortOrder: 'desc',
+  });
+
+  // Fetch stats separately
   useEffect(() => {
-    fetchReports();
+    fetch('/api/reports/builder', {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stats) setStats(data.stats);
+      })
+      .catch(console.error);
   }, []);
 
-  const fetchReports = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await fetch('/api/reports/builder', {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache',
-        },
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch reports');
-      }
-
-      setReports(data.reports || []);
-      setStats(data.stats || null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load reports');
-    } finally {
-      setLoading(false);
-    }
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+    setSort(columnId, newOrder);
   };
 
   const handleDeleteReport = async (reportId: string) => {
-    if (!confirm('Are you sure you want to delete this report?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Report',
+      message: 'Are you sure you want to delete this report? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`/api/reports/builder/${reportId}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete report');
-      fetchReports();
+      toast.showSuccess('Report deleted successfully');
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedReport) return;
+    setEditFormData({
+      name: selectedReport.name,
+      description: selectedReport.description || '',
+      objectType: selectedReport.objectType,
+      reportType: selectedReport.reportType,
+      isPublic: selectedReport.isPublic,
+    });
+    setEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedReport) return;
+    try {
+      const response = await fetch(`/api/reports/builder/${selectedReport.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editFormData.name,
+          description: editFormData.description,
+          reportType: editFormData.reportType,
+          objectType: editFormData.objectType,
+          isPublic: editFormData.isPublic,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update report');
+      const updatedReport = await response.json();
+      setSelectedReport({
+        ...selectedReport,
+        name: updatedReport.name ?? editFormData.name,
+        description: updatedReport.description ?? editFormData.description,
+        reportType: updatedReport.format ?? editFormData.reportType,
+        objectType: updatedReport.objectType ?? editFormData.objectType,
+        isPublic: updatedReport.isPublic ?? editFormData.isPublic,
+      });
+      setEditMode(false);
+      toast.showSuccess('Report updated successfully');
+      refresh();
+    } catch (err: any) {
+      toast.showError(err.message);
     }
   };
 
@@ -161,15 +256,15 @@ export default function ReportsPage() {
     return true;
   });
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
-    );
-  }
+  const exportData = filteredReports.map((r) => ({
+    Name: r.name,
+    Description: r.description || '',
+    Type: r.reportType,
+    Object: r.objectType,
+    Columns: Array.isArray(r.columns) ? r.columns.length : 0,
+    Visibility: r.isPublic ? 'Public' : 'Private',
+    Created: new Date(r.createdAt).toLocaleDateString(),
+  }));
 
   return (
     <DashboardLayout>
@@ -184,11 +279,12 @@ export default function ReportsPage() {
               View and manage your saved reports
             </Typography>
           </Box>
-          <Box display="flex" gap={1}>
+          <Box display="flex" gap={1} alignItems="center">
+            <ExportToolbar data={exportData} filename="reports" title="Reports" />
             <Button
               variant="outlined"
               startIcon={<RefreshIcon />}
-              onClick={fetchReports}
+              onClick={refresh}
             >
               Refresh
             </Button>
@@ -204,7 +300,7 @@ export default function ReportsPage() {
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+          <Alert severity="error" sx={{ mb: 3 }} onClose={() => {}}>
             <strong>Error:</strong> {error}
             <Box sx={{ mt: 1 }}>
               <Typography variant="body2">
@@ -316,160 +412,320 @@ export default function ReportsPage() {
             </Box>
 
             {/* Reports Table */}
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Report Name</TableCell>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Object</TableCell>
-                    <TableCell>Columns</TableCell>
-                    <TableCell>Visibility</TableCell>
-                    <TableCell>Created</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredReports.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
-                        <ReportIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-                        <Typography variant="h6" color="text.secondary" gutterBottom>
-                          No reports found
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400 }}>
-                          {reports.length === 0
-                            ? 'Your reports library is empty. Create a custom report or import sample data to get started.'
-                            : 'No reports match your current filters. Try adjusting the filter or view all reports.'}
-                        </Typography>
-                        {reports.length === 0 ? (
-                          <Box display="flex" gap={2} justifyContent="center" flexWrap="wrap">
-                            <Button
-                              variant="contained"
-                              size="large"
-                              startIcon={<AddIcon />}
-                              onClick={() => router.push('/report-builder')}
-                            >
-                              Create New Report
-                            </Button>
-                            <Button
-                              variant="outlined"
-                              size="large"
-                              onClick={() => router.push('/settings')}
-                            >
-                              Import Sample Data
-                            </Button>
-                          </Box>
-                        ) : (
-                          <Button
-                            variant="outlined"
-                            onClick={() => {
-                              setActiveTab(0);
-                              setFilterObjectType('');
-                            }}
-                          >
-                            Clear Filters
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredReports.map((report) => (
-                      <TableRow key={report.id} hover>
-                        <TableCell>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            {getReportTypeIcon(report.reportType)}
-                            <Box>
-                              <Typography variant="body2" fontWeight={500}>
-                                {report.name}
-                              </Typography>
-                              {report.description && (
-                                <Typography variant="caption" color="text.secondary">
-                                  {report.description.length > 50
-                                    ? `${report.description.substring(0, 50)}...`
-                                    : report.description}
-                                </Typography>
-                              )}
-                            </Box>
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={report.reportType}
-                            size="small"
-                            color={getReportTypeColor(report.reportType)}
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={report.objectType} size="small" variant="outlined" />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">
-                            {Array.isArray(report.columns) ? report.columns.length : 0} columns
+            {loading ? (
+              <Box sx={{ p: 2 }}>
+                <TableSkeleton rows={5} columns={7} />
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <SortableTableHead
+                    columns={tableColumns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {filteredReports.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
+                          <ReportIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                          <Typography variant="h6" color="text.secondary" gutterBottom>
+                            No reports found
                           </Typography>
-                        </TableCell>
-                        <TableCell>
-                          {report.isPublic ? (
-                            <Chip
-                              icon={<PublicIcon />}
-                              label="Public"
-                              size="small"
-                              color="success"
-                              variant="outlined"
-                            />
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400 }}>
+                            {reports.length === 0
+                              ? 'Your reports library is empty. Create a custom report or import sample data to get started.'
+                              : 'No reports match your current filters. Try adjusting the filter or view all reports.'}
+                          </Typography>
+                          {reports.length === 0 ? (
+                            <Box display="flex" gap={2} justifyContent="center" flexWrap="wrap">
+                              <Button
+                                variant="contained"
+                                size="large"
+                                startIcon={<AddIcon />}
+                                onClick={() => router.push('/report-builder')}
+                              >
+                                Create New Report
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                size="large"
+                                onClick={() => router.push('/settings')}
+                              >
+                                Import Sample Data
+                              </Button>
+                            </Box>
                           ) : (
-                            <Chip
-                              icon={<PrivateIcon />}
-                              label="Private"
-                              size="small"
+                            <Button
                               variant="outlined"
-                            />
+                              onClick={() => {
+                                setActiveTab(0);
+                                setFilterObjectType('');
+                              }}
+                            >
+                              Clear Filters
+                            </Button>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">
-                            {new Date(report.createdAt).toLocaleDateString()}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Tooltip title="Run Report">
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => router.push(`/reports/${report.id}`)}
-                            >
-                              <RunIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Edit">
-                            <IconButton size="small">
-                              <EditIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Export">
-                            <IconButton size="small">
-                              <ExportIcon />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleDeleteReport(report.id)}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    ) : (
+                      filteredReports.map((report) => (
+                        <TableRow
+                          key={report.id}
+                          hover
+                          sx={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            setSelectedReport(report);
+                            setDetailOpen(true);
+                          }}
+                        >
+                          <TableCell>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              {getReportTypeIcon(report.reportType)}
+                              <Box>
+                                <Typography variant="body2" fontWeight={500}>
+                                  {report.name}
+                                </Typography>
+                                {report.description && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {report.description.length > 50
+                                      ? `${report.description.substring(0, 50)}...`
+                                      : report.description}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={report.reportType}
+                              size="small"
+                              color={getReportTypeColor(report.reportType)}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip label={report.objectType} size="small" variant="outlined" />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {Array.isArray(report.columns) ? report.columns.length : 0} columns
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {report.isPublic ? (
+                              <Chip
+                                icon={<PublicIcon />}
+                                label="Public"
+                                size="small"
+                                color="success"
+                                variant="outlined"
+                              />
+                            ) : (
+                              <Chip
+                                icon={<PrivateIcon />}
+                                label="Private"
+                                size="small"
+                                variant="outlined"
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {new Date(report.createdAt).toLocaleDateString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                            <Tooltip title="Run Report">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => router.push(`/reports/${report.id}`)}
+                              >
+                                <RunIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Edit">
+                              <IconButton size="small">
+                                <EditIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Export">
+                              <IconButton size="small">
+                                <ExportIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteReport(report.id)}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           </CardContent>
         </Card>
+
+        {/* Report Detail Dialog */}
+        <Dialog open={detailOpen} onClose={() => { setDetailOpen(false); setEditMode(false); }} maxWidth="sm" fullWidth>
+          <DialogTitle>{editMode ? 'Edit Report' : 'Report Details'}</DialogTitle>
+          <DialogContent>
+            {selectedReport && !editMode && (
+              <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Name</Typography>
+                  <Typography>{selectedReport.name}</Typography>
+                </Box>
+                {selectedReport.description && (
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">Description</Typography>
+                    <Typography>{selectedReport.description}</Typography>
+                  </Box>
+                )}
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Type</Typography>
+                  <Chip
+                    label={selectedReport.reportType}
+                    size="small"
+                    color={getReportTypeColor(selectedReport.reportType)}
+                    variant="outlined"
+                  />
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Object</Typography>
+                  <Chip label={selectedReport.objectType} size="small" variant="outlined" />
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Visibility</Typography>
+                  {selectedReport.isPublic ? (
+                    <Chip icon={<PublicIcon />} label="Public" size="small" color="success" variant="outlined" />
+                  ) : (
+                    <Chip icon={<PrivateIcon />} label="Private" size="small" variant="outlined" />
+                  )}
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Columns</Typography>
+                  <Typography>{Array.isArray(selectedReport.columns) ? selectedReport.columns.join(', ') : 'None'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Created</Typography>
+                  <Typography>{new Date(selectedReport.createdAt).toLocaleString()}</Typography>
+                </Box>
+              </Box>
+            )}
+            {selectedReport && editMode && (
+              <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  label="Name"
+                  fullWidth
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                />
+                <TextField
+                  label="Description"
+                  fullWidth
+                  multiline
+                  rows={3}
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                />
+                <FormControl fullWidth>
+                  <InputLabel>Object Type</InputLabel>
+                  <Select
+                    value={editFormData.objectType}
+                    onChange={(e) => setEditFormData({ ...editFormData, objectType: e.target.value })}
+                    label="Object Type"
+                  >
+                    {OBJECT_TYPES.map((obj) => (
+                      <MenuItem key={obj.value} value={obj.value}>
+                        {obj.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel>Report Type</InputLabel>
+                  <Select
+                    value={editFormData.reportType}
+                    onChange={(e) => setEditFormData({ ...editFormData, reportType: e.target.value as 'TABULAR' | 'SUMMARY' | 'MATRIX' })}
+                    label="Report Type"
+                  >
+                    <MenuItem value="TABULAR">Tabular</MenuItem>
+                    <MenuItem value="SUMMARY">Summary</MenuItem>
+                    <MenuItem value="MATRIX">Matrix</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={editFormData.isPublic}
+                      onChange={(e) => setEditFormData({ ...editFormData, isPublic: e.target.checked })}
+                    />
+                  }
+                  label="Public"
+                />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {selectedReport && !editMode && (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<EditIcon />}
+                  onClick={handleStartEdit}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    router.push(`/reports/${selectedReport.id}`);
+                    setDetailOpen(false);
+                  }}
+                >
+                  Run Report
+                </Button>
+              </>
+            )}
+            {editMode && (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<CancelIcon />}
+                  onClick={handleCancelEdit}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSaveEdit}
+                >
+                  Save
+                </Button>
+              </>
+            )}
+            {!editMode && <Button onClick={() => { setDetailOpen(false); setEditMode(false); }}>Close</Button>}
+          </DialogActions>
+        </Dialog>
       </Box>
     </DashboardLayout>
   );

@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -42,7 +41,16 @@ import LocationOnIcon from '@mui/icons-material/LocationOn';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import SearchIcon from '@mui/icons-material/Search';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface MarketingEvent {
   id: string;
@@ -67,6 +75,17 @@ interface MarketingEvent {
   _count?: { registrations: number; sessions: number };
 }
 
+const columns: Column[] = [
+  { id: 'name', label: 'Event Name' },
+  { id: 'type', label: 'Type' },
+  { id: 'startDateTime', label: 'Date' },
+  { id: 'locationType', label: 'Location' },
+  { id: 'currentAttendees', label: 'Registrations' },
+  { id: 'capacity', label: 'Capacity', sortable: false },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function MarketingEventsPage() {
   const [events, setEvents] = useState<MarketingEvent[]>([]);
   const [stats, setStats] = useState({
@@ -81,6 +100,26 @@ export default function MarketingEventsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<MarketingEvent | null>(null);
+  const [sortBy, setSortBy] = useState('startDateTime');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    type: '',
+    startDateTime: '',
+    endDateTime: '',
+    locationType: '',
+    maxAttendees: 0,
+    registrationFee: 0,
+  });
+  const [editSaving, setEditSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -104,10 +143,12 @@ export default function MarketingEventsPage() {
     try {
       const response = await fetch('/api/marketing-events');
       const data = await response.json();
-      setEvents(data.events || []);
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setEvents(arr);
       setStats(data.stats || {});
     } catch (error) {
       console.error('Error fetching marketing events:', error);
+      showError('Failed to load events');
     } finally {
       setLoading(false);
     }
@@ -125,9 +166,13 @@ export default function MarketingEventsPage() {
         setDialogOpen(false);
         fetchEvents();
         resetForm();
+        showSuccess('Event created successfully');
+      } else {
+        showError('Failed to create event');
       }
     } catch (error) {
       console.error('Error creating event:', error);
+      showError('Failed to create event');
     }
   };
 
@@ -140,14 +185,22 @@ export default function MarketingEventsPage() {
         body: JSON.stringify({ id: eventId, status }),
       });
       fetchEvents();
+      showSuccess(`Event ${status.toLowerCase()}`);
     } catch (error) {
       console.error('Error updating event status:', error);
+      showError('Failed to update event status');
     }
   };
 
   const handleDeleteEvent = async (eventId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!confirm('Are you sure you want to delete this event?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? All registrations will be lost.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/marketing-events?id=${eventId}`, { method: 'DELETE' });
@@ -156,14 +209,65 @@ export default function MarketingEventsPage() {
         setDetailDialogOpen(false);
         setSelectedEvent(null);
       }
+      showSuccess('Event deleted successfully');
     } catch (error) {
       console.error('Error deleting event:', error);
+      showError('Failed to delete event');
     }
   };
 
   const handleRowClick = (event: MarketingEvent) => {
     setSelectedEvent(event);
+    setEditMode(false);
     setDetailDialogOpen(true);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedEvent) return;
+    setEditFormData({
+      name: selectedEvent.name || '',
+      type: selectedEvent.type || '',
+      startDateTime: selectedEvent.startDateTime ? selectedEvent.startDateTime.slice(0, 16) : '',
+      endDateTime: selectedEvent.endDateTime ? selectedEvent.endDateTime.slice(0, 16) : '',
+      locationType: selectedEvent.locationType || '',
+      maxAttendees: selectedEvent.maxAttendees || 0,
+      registrationFee: selectedEvent.registrationFee || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedEvent) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/marketing-events', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedEvent.id, ...editFormData }),
+      });
+      if (response.ok) {
+        showSuccess('Event updated successfully');
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        fetchEvents();
+      } else {
+        showError('Failed to update event');
+      }
+    } catch (error) {
+      console.error('Error updating event:', error);
+      showError('Failed to update event');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleSort = (columnId: string) => {
+    if (sortBy === columnId) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(columnId);
+      setSortOrder('asc');
+    }
   };
 
   const resetForm = () => {
@@ -185,33 +289,20 @@ export default function MarketingEventsPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'PUBLISHED':
-        return 'success';
-      case 'DRAFT':
-        return 'default';
-      case 'CANCELLED':
-        return 'error';
-      case 'COMPLETED':
-        return 'info';
-      default:
-        return 'default';
+      case 'PUBLISHED': return 'success';
+      case 'DRAFT': return 'default';
+      case 'CANCELLED': return 'error';
+      case 'COMPLETED': return 'info';
+      default: return 'default';
     }
-  };
-
-  const getTypeIcon = (type: string) => {
-    return <EventIcon fontSize="small" />;
   };
 
   const getLocationIcon = (locationType: string) => {
     switch (locationType) {
-      case 'ONLINE':
-        return <VideocamIcon fontSize="small" color="primary" />;
-      case 'IN_PERSON':
-        return <LocationOnIcon fontSize="small" color="error" />;
-      case 'HYBRID':
-        return <CalendarMonthIcon fontSize="small" color="warning" />;
-      default:
-        return <EventIcon fontSize="small" />;
+      case 'ONLINE': return <VideocamIcon fontSize="small" color="primary" />;
+      case 'IN_PERSON': return <LocationOnIcon fontSize="small" color="error" />;
+      case 'HYBRID': return <CalendarMonthIcon fontSize="small" color="warning" />;
+      default: return <EventIcon fontSize="small" />;
     }
   };
 
@@ -241,7 +332,29 @@ export default function MarketingEventsPage() {
       else if (tabValue === 3) matchesTab = event.status === 'DRAFT';
 
       return matchesSearch && matchesTab;
+    })
+    .sort((a, b) => {
+      const aVal = (a as any)[sortBy];
+      const bVal = (b as any)[sortBy];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal));
+      return sortOrder === 'asc' ? cmp : -cmp;
     });
+
+  const totalItems = filteredEvents.length;
+  const paginatedEvents = filteredEvents.slice((page - 1) * pageSize, page * pageSize);
+
+  const exportData = filteredEvents.map(e => ({
+    Name: e.name,
+    Type: e.type,
+    Date: formatDate(e.startDateTime),
+    Location: e.locationType,
+    Registrations: e.currentAttendees,
+    Capacity: e.maxAttendees || 'Unlimited',
+    Status: e.status,
+  }));
 
   return (
     <DashboardLayout>
@@ -251,13 +364,16 @@ export default function MarketingEventsPage() {
             <EventIcon sx={{ fontSize: 32, color: 'primary.main' }} />
             <Typography variant="h4">Event Management</Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Event
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="marketing-events" title="Marketing Events" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Event
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -330,109 +446,112 @@ export default function MarketingEventsPage() {
           </Tabs>
         </Paper>
 
-        {loading && <LinearProgress sx={{ mb: 2 }} />}
-
         {/* Events Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Event Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell>Location</TableCell>
-                <TableCell>Registrations</TableCell>
-                <TableCell>Capacity</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredEvents.map((event) => (
-                <TableRow
-                  key={event.id}
-                  hover
-                  onClick={() => handleRowClick(event)}
-                  sx={{ cursor: 'pointer' }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {event.name}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={event.type} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{formatDate(event.startDateTime)}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      {getLocationIcon(event.locationType)}
-                      {event.locationType === 'ONLINE'
-                        ? event.virtualPlatform || 'Online'
-                        : `${event.city || ''} ${event.venue || ''}`}
-                    </Box>
-                  </TableCell>
-                  <TableCell>{event.currentAttendees}</TableCell>
-                  <TableCell>
-                    {event.maxAttendees ? (
-                      <Box>
-                        <Typography variant="body2">
-                          {event.currentAttendees}/{event.maxAttendees}
-                        </Typography>
-                        <LinearProgress
-                          variant="determinate"
-                          value={getCapacityPercent(event)}
-                          color={getCapacityPercent(event) >= 90 ? 'error' : 'primary'}
-                          sx={{ height: 4, borderRadius: 2, mt: 0.5 }}
-                        />
+        {loading ? (
+          <TableSkeleton rows={5} columns={8} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={columns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {paginatedEvents.map((event) => (
+                  <TableRow
+                    key={event.id}
+                    hover
+                    onClick={() => handleRowClick(event)}
+                    sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {event.name}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={event.type} size="small" variant="outlined" />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{formatDate(event.startDateTime)}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {getLocationIcon(event.locationType)}
+                        {event.locationType === 'ONLINE'
+                          ? event.virtualPlatform || 'Online'
+                          : `${event.city || ''} ${event.venue || ''}`}
                       </Box>
-                    ) : (
-                      'Unlimited'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={event.status}
-                      color={getStatusColor(event.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {event.status === 'DRAFT' && (
-                      <Tooltip title="Publish">
+                    </TableCell>
+                    <TableCell>{event.currentAttendees}</TableCell>
+                    <TableCell>
+                      {event.maxAttendees ? (
+                        <Box>
+                          <Typography variant="body2">
+                            {event.currentAttendees}/{event.maxAttendees}
+                          </Typography>
+                          <LinearProgress
+                            variant="determinate"
+                            value={getCapacityPercent(event)}
+                            color={getCapacityPercent(event) >= 90 ? 'error' : 'primary'}
+                            sx={{ height: 4, borderRadius: 2, mt: 0.5 }}
+                          />
+                        </Box>
+                      ) : (
+                        'Unlimited'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={event.status}
+                        color={getStatusColor(event.status) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {event.status === 'DRAFT' && (
+                        <Tooltip title="Publish">
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={(e) => handleStatusChange(event.id, 'PUBLISHED', e)}
+                          >
+                            <CheckCircleIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="Delete">
                         <IconButton
                           size="small"
-                          color="success"
-                          onClick={(e) => handleStatusChange(event.id, 'PUBLISHED', e)}
+                          color="error"
+                          onClick={(e) => handleDeleteEvent(event.id, e)}
                         >
-                          <CheckCircleIcon />
+                          <DeleteIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
-                    <Tooltip title="Delete">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={(e) => handleDeleteEvent(event.id, e)}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredEvents.length === 0 && !loading && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No events found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {paginatedEvents.length === 0 && !loading && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center">
+                      No events found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Detail Dialog */}
@@ -456,121 +575,228 @@ export default function MarketingEventsPage() {
               </Box>
             </DialogTitle>
             <DialogContent dividers>
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12 }}>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Chip
-                      label={selectedEvent.status}
-                      color={getStatusColor(selectedEvent.status) as any}
-                    />
-                    <Chip label={selectedEvent.type} variant="outlined" />
-                    <Chip
-                      icon={getLocationIcon(selectedEvent.locationType)}
-                      label={selectedEvent.locationType}
-                      variant="outlined"
-                    />
-                  </Box>
-                </Grid>
-
-                {selectedEvent.description && (
+              {selectedEvent && !editMode && (
+                <Grid container spacing={3}>
                   <Grid size={{ xs: 12 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {selectedEvent.description}
-                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={selectedEvent.status}
+                        color={getStatusColor(selectedEvent.status) as any}
+                      />
+                      <Chip label={selectedEvent.type} variant="outlined" />
+                      <Chip
+                        icon={getLocationIcon(selectedEvent.locationType)}
+                        label={selectedEvent.locationType}
+                        variant="outlined"
+                      />
+                    </Box>
                   </Grid>
-                )}
 
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <CalendarMonthIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Date & Time
-                    </Typography>
-                    <Typography variant="body1">
-                      {formatDateTime(selectedEvent.startDateTime)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      to {formatDateTime(selectedEvent.endDateTime)}
-                    </Typography>
-                  </Paper>
-                </Grid>
+                  {selectedEvent.description && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedEvent.description}
+                      </Typography>
+                    </Grid>
+                  )}
 
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <LocationOnIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Location
-                    </Typography>
-                    {selectedEvent.locationType === 'ONLINE' ? (
-                      <>
-                        <Typography variant="body1">{selectedEvent.virtualPlatform}</Typography>
-                        {selectedEvent.virtualUrl && (
-                          <Typography variant="body2" color="primary" sx={{ wordBreak: 'break-all' }}>
-                            {selectedEvent.virtualUrl}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <CalendarMonthIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Date & Time
+                      </Typography>
+                      <Typography variant="body1">
+                        {formatDateTime(selectedEvent.startDateTime)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        to {formatDateTime(selectedEvent.endDateTime)}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <LocationOnIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Location
+                      </Typography>
+                      {selectedEvent.locationType === 'ONLINE' ? (
+                        <>
+                          <Typography variant="body1">{selectedEvent.virtualPlatform}</Typography>
+                          {selectedEvent.virtualUrl && (
+                            <Typography variant="body2" color="primary" sx={{ wordBreak: 'break-all' }}>
+                              {selectedEvent.virtualUrl}
+                            </Typography>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Typography variant="body1">{selectedEvent.venue}</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {selectedEvent.city}, {selectedEvent.state}
                           </Typography>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <Typography variant="body1">{selectedEvent.venue}</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {selectedEvent.city}, {selectedEvent.state}
-                        </Typography>
-                      </>
-                    )}
-                  </Paper>
-                </Grid>
+                        </>
+                      )}
+                    </Paper>
+                  </Grid>
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <PeopleIcon color="primary" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="h4">{selectedEvent.currentAttendees}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Registrations{selectedEvent.maxAttendees ? ` / ${selectedEvent.maxAttendees}` : ''}
-                    </Typography>
-                  </Paper>
-                </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <PeopleIcon color="primary" sx={{ fontSize: 40, mb: 1 }} />
+                      <Typography variant="h4">{selectedEvent.currentAttendees}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Registrations{selectedEvent.maxAttendees ? ` / ${selectedEvent.maxAttendees}` : ''}
+                      </Typography>
+                    </Paper>
+                  </Grid>
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h4" color="text.secondary">
-                      {selectedEvent._count?.sessions || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">Sessions</Typography>
-                  </Paper>
-                </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h4" color="text.secondary">
+                        {selectedEvent._count?.sessions || 0}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Sessions</Typography>
+                    </Paper>
+                  </Grid>
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h4" color="success.main">
-                      {selectedEvent.registrationFee ? `$${selectedEvent.registrationFee}` : 'Free'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">Registration Fee</Typography>
-                  </Paper>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h4" color="success.main">
+                        {selectedEvent.registrationFee ? `$${selectedEvent.registrationFee}` : 'Free'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Registration Fee</Typography>
+                    </Paper>
+                  </Grid>
                 </Grid>
-              </Grid>
+              )}
+              {selectedEvent && editMode && (
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Event Name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Event Type"
+                      value={editFormData.type}
+                      onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value })}
+                      select
+                    >
+                      <MenuItem value="WEBINAR">Webinar</MenuItem>
+                      <MenuItem value="CONFERENCE">Conference</MenuItem>
+                      <MenuItem value="WORKSHOP">Workshop</MenuItem>
+                      <MenuItem value="MEETUP">Meetup</MenuItem>
+                      <MenuItem value="TRADE_SHOW">Trade Show</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Start Date"
+                      type="datetime-local"
+                      value={editFormData.startDateTime}
+                      onChange={(e) => setEditFormData({ ...editFormData, startDateTime: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="End Date"
+                      type="datetime-local"
+                      value={editFormData.endDateTime}
+                      onChange={(e) => setEditFormData({ ...editFormData, endDateTime: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Location Type"
+                      value={editFormData.locationType}
+                      onChange={(e) => setEditFormData({ ...editFormData, locationType: e.target.value })}
+                      select
+                    >
+                      <MenuItem value="ONLINE">Online</MenuItem>
+                      <MenuItem value="IN_PERSON">In Person</MenuItem>
+                      <MenuItem value="HYBRID">Hybrid</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Max Attendees"
+                      type="number"
+                      value={editFormData.maxAttendees}
+                      onChange={(e) => setEditFormData({ ...editFormData, maxAttendees: parseInt(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Registration Fee"
+                      type="number"
+                      value={editFormData.registrationFee}
+                      onChange={(e) => setEditFormData({ ...editFormData, registrationFee: parseFloat(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                </Grid>
+              )}
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
-              {selectedEvent.status === 'DRAFT' && (
-                <Button
-                  color="success"
-                  startIcon={<CheckCircleIcon />}
-                  onClick={(e) => {
-                    handleStatusChange(selectedEvent.id, 'PUBLISHED', e);
-                    setDetailDialogOpen(false);
-                  }}
-                >
-                  Publish
-                </Button>
+              {!editMode ? (
+                <>
+                  {selectedEvent.status === 'DRAFT' && (
+                    <Button
+                      color="success"
+                      startIcon={<CheckCircleIcon />}
+                      onClick={(e) => {
+                        handleStatusChange(selectedEvent.id, 'PUBLISHED', e);
+                        setDetailDialogOpen(false);
+                      }}
+                    >
+                      Publish
+                    </Button>
+                  )}
+                  <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
+                  <Button
+                    startIcon={<EditIcon />}
+                    onClick={handleStartEdit}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={(e) => handleDeleteEvent(selectedEvent.id, e)}
+                  >
+                    Delete
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    startIcon={<CancelIcon />}
+                    onClick={() => setEditMode(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveEdit}
+                    disabled={editSaving}
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </>
               )}
-              <Button
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={(e) => handleDeleteEvent(selectedEvent.id, e)}
-              >
-                Delete
-              </Button>
-              <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
             </DialogActions>
           </>
         )}

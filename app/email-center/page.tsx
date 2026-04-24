@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Box,
   Button,
@@ -11,10 +11,8 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Chip,
-  CircularProgress,
   Alert,
   Dialog,
   DialogTitle,
@@ -29,9 +27,19 @@ import {
   Divider,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 import AddIcon from '@mui/icons-material/Add';
 import SendIcon from '@mui/icons-material/Send';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Cancel';
 import DraftsIcon from '@mui/icons-material/Drafts';
 import InboxIcon from '@mui/icons-material/Inbox';
 import TemplateIcon from '@mui/icons-material/Description';
@@ -44,6 +52,8 @@ interface EmailMessage {
   sentAt: string | null;
   to: string;
   from: string;
+  ccAddress: string | null;
+  bccAddress: string | null;
   createdAt: string;
   campaign?: {
     id: string;
@@ -51,16 +61,26 @@ interface EmailMessage {
   };
 }
 
+const columns: Column[] = [
+  { id: 'subject', label: 'Subject' },
+  { id: 'from', label: 'From/To', sortable: false },
+  { id: 'campaign', label: 'Campaign', sortable: false },
+  { id: 'status', label: 'Status' },
+  { id: 'sentAt', label: 'Date' },
+  { id: 'actions', label: 'Actions', sortable: false, align: 'center' },
+];
+
 export default function EmailCenterPage() {
-  const [emails, setEmails] = useState<EmailMessage[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [templates, setTemplates] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<EmailMessage | null>(null);
   const [tabValue, setTabValue] = useState(0);
+  const [sortBy, setSortBy] = useState('sentAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const [formData, setFormData] = useState({
     to: '',
@@ -70,21 +90,24 @@ export default function EmailCenterPage() {
     templateId: '',
   });
 
-  useEffect(() => {
-    fetchEmails();
-    fetchTemplates();
-    fetchCampaigns();
-  }, []);
+  const {
+    data: rawEmails,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<any>({
+    url: '/api/emails',
+    defaultSortBy: 'sentAt',
+    defaultSortOrder: 'desc',
+  });
 
-  const fetchEmails = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/emails');
-      if (!response.ok) throw new Error('Failed to fetch emails');
-      const data = await response.json();
-
-      // Transform the data to match the expected interface
-      const transformedEmails = data.map((email: any) => ({
+  const emails: EmailMessage[] = useMemo(
+    () =>
+      rawEmails.map((email: any) => ({
         id: email.id,
         subject: email.subject,
         body: email.body,
@@ -92,23 +115,24 @@ export default function EmailCenterPage() {
         sentAt: email.sentAt,
         to: email.toAddress,
         from: email.sender?.email || email.sender?.name || 'Unknown',
+        ccAddress: email.ccAddress || null,
+        bccAddress: email.bccAddress || null,
         createdAt: email.createdAt,
-      }));
+      })),
+    [rawEmails]
+  );
 
-      setEmails(transformedEmails);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    fetchTemplates();
+    fetchCampaigns();
+  }, []);
 
   const fetchTemplates = async () => {
     try {
       const response = await fetch('/api/email-templates');
       if (!response.ok) throw new Error('Failed to fetch templates');
       const data = await response.json();
-      setTemplates(data);
+      setTemplates(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching templates:', err);
     }
@@ -119,15 +143,94 @@ export default function EmailCenterPage() {
       const response = await fetch('/api/campaigns');
       if (!response.ok) throw new Error('Failed to fetch campaigns');
       const data = await response.json();
-      setCampaigns(data);
+      setCampaigns(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching campaigns:', err);
     }
   };
 
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+    setSort(columnId, newOrder);
+  };
+
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    subject: '',
+    body: '',
+    toAddress: '',
+    ccAddress: '',
+    bccAddress: '',
+    status: '',
+  });
+
   const handleViewEmail = (email: EmailMessage) => {
     setSelectedEmail(email);
+    setEditMode(false);
     setOpenViewDialog(true);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedEmail) return;
+    setEditFormData({
+      subject: selectedEmail.subject || '',
+      body: selectedEmail.body || '',
+      toAddress: selectedEmail.to || '',
+      ccAddress: selectedEmail.ccAddress || '',
+      bccAddress: selectedEmail.bccAddress || '',
+      status: selectedEmail.status || '',
+    });
+    setEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedEmail) return;
+    try {
+      const response = await fetch(`/api/emails/${selectedEmail.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: editFormData.subject,
+          body: editFormData.body,
+          toAddress: editFormData.toAddress,
+          ccAddress: editFormData.ccAddress || null,
+          bccAddress: editFormData.bccAddress || null,
+          status: editFormData.status,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update email');
+      toast.showSuccess('Email updated successfully');
+      setEditMode(false);
+      setOpenViewDialog(false);
+      refresh();
+    } catch (err: any) {
+      toast.showError(err.message);
+    }
+  };
+
+  const handleDeleteEmail = async (emailId: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Email',
+      message: 'Are you sure you want to delete this email? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/emails/${emailId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete email');
+      toast.showSuccess('Email deleted successfully');
+      refresh();
+    } catch (err: any) {
+      toast.showError(err.message);
+    }
   };
 
   const handleComposeEmail = async () => {
@@ -153,9 +256,10 @@ export default function EmailCenterPage() {
         campaignId: '',
         templateId: '',
       });
-      fetchEmails();
+      toast.showSuccess('Email sent successfully');
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      toast.showError(err.message);
     }
   };
 
@@ -205,47 +309,48 @@ export default function EmailCenterPage() {
 
   const getTabEmails = () => {
     switch (tabValue) {
-      case 0: // Inbox (all received/sent emails)
+      case 0:
         return emails.filter((e) => ['SENT', 'DELIVERED', 'OPENED', 'CLICKED', 'BOUNCED', 'FAILED'].includes(e.status));
-      case 1: // Sent
+      case 1:
         return emails.filter((e) => ['SENT', 'DELIVERED', 'OPENED', 'CLICKED'].includes(e.status));
-      case 2: // Drafts
+      case 2:
         return emails.filter((e) => e.status === 'DRAFT');
-      case 3: // Templates
+      case 3:
         return templates;
       default:
         return [];
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
-    );
-  }
-
   const currentEmails = getTabEmails();
+
+  const exportData = currentEmails.map((e: any) => ({
+    Subject: e.subject,
+    From: e.from || '',
+    To: e.to || '',
+    Status: e.status,
+    Date: formatDateTime(e.sentAt || e.createdAt),
+  }));
 
   return (
     <DashboardLayout>
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Email Center</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setOpenDialog(true)}
-          >
-            Compose Email
-          </Button>
+          <Box display="flex" gap={2} alignItems="center">
+            <ExportToolbar data={exportData} filename="emails" title="Emails" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenDialog(true)}
+            >
+              Compose Email
+            </Button>
+          </Box>
         </Box>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => {}}>
             {error}
           </Alert>
         )}
@@ -292,72 +397,82 @@ export default function EmailCenterPage() {
                   </Box>
                 )}
               </Box>
+            ) : loading ? (
+              <TableSkeleton rows={5} columns={6} />
             ) : (
-              <TableContainer component={Paper} elevation={0}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Subject</TableCell>
-                      <TableCell>
-                        {tabValue === 0 ? 'From' : tabValue === 1 ? 'To' : 'Recipient'}
-                      </TableCell>
-                      <TableCell>Campaign</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Date</TableCell>
-                      <TableCell align="center">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {currentEmails.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} align="center">
-                          <Typography color="text.secondary">
-                            {tabValue === 0 && 'No emails in inbox'}
-                            {tabValue === 1 && 'No sent emails'}
-                            {tabValue === 2 && 'No draft emails'}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      currentEmails.map((email: any) => (
-                        <TableRow
-                          key={email.id}
-                          hover
-                          sx={{ cursor: 'pointer' }}
-                          onClick={() => handleViewEmail(email)}
-                        >
-                          <TableCell>{email.subject}</TableCell>
-                          <TableCell>
-                            {tabValue === 0 ? email.from : email.to}
-                          </TableCell>
-                          <TableCell>
-                            {email.campaign ? (
-                              <Chip label={email.campaign.name} size="small" variant="outlined" />
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={email.status}
-                              size="small"
-                              color={getStatusColor(email.status) as any}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            {formatDateTime(email.sentAt || email.createdAt)}
-                          </TableCell>
-                          <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                            <IconButton size="small" title="Delete" color="error">
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
+              <>
+                <TableContainer component={Paper} elevation={0}>
+                  <Table>
+                    <SortableTableHead
+                      columns={columns}
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSort={handleSort}
+                    />
+                    <TableBody>
+                      {currentEmails.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} align="center">
+                            <Typography color="text.secondary">
+                              {tabValue === 0 && 'No emails in inbox'}
+                              {tabValue === 1 && 'No sent emails'}
+                              {tabValue === 2 && 'No draft emails'}
+                            </Typography>
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                      ) : (
+                        currentEmails.map((email: any) => (
+                          <TableRow
+                            key={email.id}
+                            hover
+                            sx={{ cursor: 'pointer' }}
+                            onClick={() => handleViewEmail(email)}
+                          >
+                            <TableCell>{email.subject}</TableCell>
+                            <TableCell>
+                              {tabValue === 0 ? email.from : email.to}
+                            </TableCell>
+                            <TableCell>
+                              {email.campaign ? (
+                                <Chip label={email.campaign.name} size="small" variant="outlined" />
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={email.status}
+                                size="small"
+                                color={getStatusColor(email.status) as any}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              {formatDateTime(email.sentAt || email.createdAt)}
+                            </TableCell>
+                            <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                              <IconButton
+                                size="small"
+                                title="Delete"
+                                color="error"
+                                onClick={() => handleDeleteEmail(email.id)}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                <PaginationControls
+                  page={pagination.page}
+                  pageSize={pagination.pageSize}
+                  totalItems={pagination.totalItems}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                />
+              </>
             )}
           </CardContent>
         </Card>
@@ -446,10 +561,10 @@ export default function EmailCenterPage() {
           </DialogActions>
         </Dialog>
 
-        <Dialog open={openViewDialog} onClose={() => setOpenViewDialog(false)} maxWidth="md" fullWidth>
-          <DialogTitle>Email Details</DialogTitle>
+        <Dialog open={openViewDialog} onClose={() => { setOpenViewDialog(false); setEditMode(false); }} maxWidth="md" fullWidth>
+          <DialogTitle>{editMode ? 'Edit Email' : 'Email Details'}</DialogTitle>
           <DialogContent>
-            {selectedEmail && (
+            {selectedEmail && !editMode && (
               <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">Subject</Typography>
@@ -465,6 +580,20 @@ export default function EmailCenterPage() {
                   <Typography variant="subtitle2" color="text.secondary">To</Typography>
                   <Typography variant="body1">{selectedEmail.to}</Typography>
                 </Box>
+
+                {selectedEmail.ccAddress && (
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">CC</Typography>
+                    <Typography variant="body1">{selectedEmail.ccAddress}</Typography>
+                  </Box>
+                )}
+
+                {selectedEmail.bccAddress && (
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">BCC</Typography>
+                    <Typography variant="body1">{selectedEmail.bccAddress}</Typography>
+                  </Box>
+                )}
 
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">Status</Typography>
@@ -497,9 +626,97 @@ export default function EmailCenterPage() {
                 </Box>
               </Box>
             )}
+
+            {selectedEmail && editMode && (
+              <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  label="To"
+                  type="email"
+                  value={editFormData.toAddress}
+                  onChange={(e) => setEditFormData({ ...editFormData, toAddress: e.target.value })}
+                  fullWidth
+                  required
+                />
+
+                <TextField
+                  label="CC"
+                  type="email"
+                  value={editFormData.ccAddress}
+                  onChange={(e) => setEditFormData({ ...editFormData, ccAddress: e.target.value })}
+                  fullWidth
+                  helperText="Optional CC address"
+                />
+
+                <TextField
+                  label="BCC"
+                  type="email"
+                  value={editFormData.bccAddress}
+                  onChange={(e) => setEditFormData({ ...editFormData, bccAddress: e.target.value })}
+                  fullWidth
+                  helperText="Optional BCC address"
+                />
+
+                <TextField
+                  label="Subject"
+                  value={editFormData.subject}
+                  onChange={(e) => setEditFormData({ ...editFormData, subject: e.target.value })}
+                  fullWidth
+                  required
+                />
+
+                <TextField
+                  select
+                  label="Status"
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                  fullWidth
+                >
+                  {['DRAFT', 'SENT', 'DELIVERED', 'OPENED', 'CLICKED', 'BOUNCED', 'FAILED'].map((s) => (
+                    <MenuItem key={s} value={s}>
+                      {s}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  label="Message"
+                  value={editFormData.body}
+                  onChange={(e) => setEditFormData({ ...editFormData, body: e.target.value })}
+                  multiline
+                  rows={10}
+                  fullWidth
+                  required
+                />
+              </Box>
+            )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setOpenViewDialog(false)}>Close</Button>
+            {editMode ? (
+              <>
+                <Button onClick={handleCancelEdit} startIcon={<CancelIcon />}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveEdit}
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  disabled={!editFormData.toAddress || !editFormData.subject || !editFormData.body}
+                >
+                  Save
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={() => { setOpenViewDialog(false); setEditMode(false); }}>Close</Button>
+                <Button
+                  onClick={handleStartEdit}
+                  variant="outlined"
+                  startIcon={<EditIcon />}
+                >
+                  Edit
+                </Button>
+              </>
+            )}
           </DialogActions>
         </Dialog>
       </Box>

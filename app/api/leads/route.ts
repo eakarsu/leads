@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const campaignId = searchParams.get('campaignId');
@@ -22,15 +25,19 @@ export async function GET(req: NextRequest) {
       ? (session.user as any).clientId
       : null;
 
+    const where = {
+      ...(campaignId && { campaignId }),
+      ...(clientId && { clientId }),
+      ...(userClientId && { clientId: userClientId }), // Filter by user's client
+      ...(status && { status: status as any }),
+      ...(minScore && { qualificationScore: { gte: parseInt(minScore) } }),
+      ...(leadSource && { leadSource: leadSource as any }),
+    };
+
+    const total = await prisma.lead.count({ where });
+
     const leads = await prisma.lead.findMany({
-      where: {
-        ...(campaignId && { campaignId }),
-        ...(clientId && { clientId }),
-        ...(userClientId && { clientId: userClientId }), // Filter by user's client
-        ...(status && { status: status as any }),
-        ...(minScore && { qualificationScore: { gte: parseInt(minScore) } }),
-        ...(leadSource && { leadSource: leadSource as any }),
-      },
+      where,
       include: {
         campaign: {
           select: {
@@ -51,12 +58,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(leads);
+    return NextResponse.json(buildPaginatedResponse(leads, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching leads:', error);
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 });

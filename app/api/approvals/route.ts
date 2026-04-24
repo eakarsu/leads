@@ -14,6 +14,22 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type'); // 'processes' or 'pending'
     const objectType = searchParams.get('objectType');
+    const submittedBy = searchParams.get('submittedBy');
+
+    // Get submissions by current user
+    if (submittedBy === 'me') {
+      const submissions = await prisma.approvalInstance.findMany({
+        where: { submittedBy: session.user.id },
+        include: {
+          process: {
+            include: { steps: { orderBy: { stepNumber: 'asc' } } },
+          },
+          actions: { orderBy: { actionAt: 'desc' } },
+        },
+        orderBy: { submittedAt: 'desc' },
+      });
+      return NextResponse.json(submissions);
+    }
 
     if (type === 'processes') {
       const where: any = { isActive: true };

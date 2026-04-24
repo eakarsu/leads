@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -31,6 +30,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import InventoryIcon from '@mui/icons-material/Inventory';
@@ -38,6 +38,13 @@ import BuildIcon from '@mui/icons-material/Build';
 import WarningIcon from '@mui/icons-material/Warning';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Asset {
   id: string;
@@ -58,8 +65,21 @@ interface Asset {
   _count: { cases: number; entitlements: number; children: number };
 }
 
+const columns: Column[] = [
+  { id: 'name', label: 'Asset Name' },
+  { id: 'serialNumber', label: 'Serial Number' },
+  { id: 'account', label: 'Account', sortable: false },
+  { id: 'product', label: 'Product', sortable: false },
+  { id: 'quantity', label: 'Qty' },
+  { id: 'price', label: 'Value' },
+  { id: 'warrantyEndDate', label: 'Warranty' },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function AssetsPage() {
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [stats, setStats] = useState({
     totalAssets: 0,
     installedAssets: 0,
@@ -67,14 +87,24 @@ export default function AssetsPage() {
     warrantyExpiringSoon: 0,
     totalValue: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    serialNumber: '',
+    description: '',
+    status: '',
+    quantity: 1,
+    price: 0,
+  });
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [accounts, setAccounts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [formData, setFormData] = useState({
     name: '',
     accountId: '',
@@ -90,26 +120,39 @@ export default function AssetsPage() {
     description: '',
   });
 
+  const extraParams: Record<string, string> = {};
+  if (search) extraParams.search = search;
+  if (statusFilter) extraParams.status = statusFilter;
+
+  const {
+    data: assets,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Asset>({
+    url: '/api/assets',
+    defaultSortBy: 'createdAt',
+    defaultSortOrder: 'desc',
+    extraParams,
+  });
+
   useEffect(() => {
-    fetchAssets();
     fetchAccounts();
     fetchProducts();
-  }, [search, statusFilter]);
+    fetchStats();
+  }, []);
 
-  const fetchAssets = async () => {
+  const fetchStats = async () => {
     try {
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      if (statusFilter) params.set('status', statusFilter);
-
-      const response = await fetch(`/api/assets?${params}`);
+      const response = await fetch('/api/assets');
       const data = await response.json();
-      setAssets(data.assets || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching assets:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -117,7 +160,7 @@ export default function AssetsPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -127,10 +170,17 @@ export default function AssetsPage() {
     try {
       const response = await fetch('/api/products');
       const data = await response.json();
-      setProducts(data.products || data || []);
+      setProducts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
     }
+  };
+
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+    setSort(columnId, newOrder);
   };
 
   const handleCreateAsset = async () => {
@@ -143,22 +193,64 @@ export default function AssetsPage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchAssets();
+        toast.showSuccess('Asset created successfully');
+        refresh();
+        fetchStats();
         resetForm();
       }
     } catch (error) {
-      console.error('Error creating asset:', error);
+      toast.showError('Error creating asset');
     }
   };
 
   const handleDeleteAsset = async (assetId: string) => {
-    if (!confirm('Are you sure you want to delete this asset?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Asset',
+      message: 'Are you sure you want to delete this asset? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/assets?id=${assetId}`, { method: 'DELETE' });
-      fetchAssets();
+      toast.showSuccess('Asset deleted successfully');
+      refresh();
+      fetchStats();
     } catch (error) {
-      console.error('Error deleting asset:', error);
+      toast.showError('Error deleting asset');
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedAsset) return;
+    setEditFormData({
+      name: selectedAsset.name,
+      serialNumber: selectedAsset.serialNumber || '',
+      description: selectedAsset.description || '',
+      status: selectedAsset.status,
+      quantity: selectedAsset.quantity,
+      price: selectedAsset.price || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedAsset) return;
+    try {
+      const response = await fetch(`/api/assets/${selectedAsset.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      if (!response.ok) throw new Error('Failed to update asset');
+      toast.showSuccess('Asset updated successfully');
+      setEditMode(false);
+      setDetailOpen(false);
+      refresh();
+      fetchStats();
+    } catch (err: any) {
+      toast.showError(err.message);
     }
   };
 
@@ -216,18 +308,32 @@ export default function AssetsPage() {
     return daysUntilExpiry <= 30 && daysUntilExpiry > 0;
   };
 
+  const exportData = assets.map((a) => ({
+    Name: a.name,
+    'Serial Number': a.serialNumber || '-',
+    Account: a.account?.name || '-',
+    Product: a.product?.name || '-',
+    Qty: a.quantity,
+    Value: formatCurrency((a.price || 0) * a.quantity),
+    Warranty: a.warrantyEndDate ? new Date(a.warrantyEndDate).toLocaleDateString() : '-',
+    Status: a.status,
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Assets</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Asset
-          </Button>
+          <Box display="flex" gap={2} alignItems="center">
+            <ExportToolbar data={exportData} filename="assets" title="Assets" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Asset
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -318,109 +424,110 @@ export default function AssetsPage() {
         </Paper>
 
         {/* Assets Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Asset Name</TableCell>
-                <TableCell>Serial Number</TableCell>
-                <TableCell>Account</TableCell>
-                <TableCell>Product</TableCell>
-                <TableCell>Qty</TableCell>
-                <TableCell>Value</TableCell>
-                <TableCell>Warranty</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {assets.map((asset) => (
-                <TableRow
-                  key={asset.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    setSelectedAsset(asset);
-                    setDetailOpen(true);
-                  }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {asset.name}
-                    </Typography>
-                    {asset._count.children > 0 && (
-                      <Typography variant="caption" color="textSecondary">
-                        {asset._count.children} child assets
+        {loading ? (
+          <TableSkeleton rows={5} columns={9} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={columns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {assets.map((asset) => (
+                  <TableRow
+                    key={asset.id}
+                    hover
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      setSelectedAsset(asset);
+                      setDetailOpen(true);
+                    }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {asset.name}
                       </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>{asset.serialNumber || '-'}</TableCell>
-                  <TableCell>{asset.account?.name || '-'}</TableCell>
-                  <TableCell>
-                    {asset.product ? (
-                      <>
-                        {asset.product.name}
-                        <br />
+                      {asset._count.children > 0 && (
                         <Typography variant="caption" color="textSecondary">
-                          {asset.product.productCode}
+                          {asset._count.children} child assets
                         </Typography>
-                      </>
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                  <TableCell>{asset.quantity}</TableCell>
-                  <TableCell>{formatCurrency((asset.price || 0) * asset.quantity)}</TableCell>
-                  <TableCell>
-                    {asset.warrantyEndDate ? (
-                      <Box>
-                        {new Date(asset.warrantyEndDate).toLocaleDateString()}
-                        {isWarrantyExpiringSoon(asset.warrantyEndDate) && (
-                          <Chip
-                            label="Expiring Soon"
-                            color="warning"
-                            size="small"
-                            sx={{ ml: 1 }}
-                          />
-                        )}
-                      </Box>
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={asset.status}
-                      color={getStatusColor(asset.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip title="Delete">
-                      <IconButton
+                      )}
+                    </TableCell>
+                    <TableCell>{asset.serialNumber || '-'}</TableCell>
+                    <TableCell>{asset.account?.name || '-'}</TableCell>
+                    <TableCell>
+                      {asset.product ? (
+                        <>
+                          {asset.product.name}
+                          <br />
+                          <Typography variant="caption" color="textSecondary">
+                            {asset.product.productCode}
+                          </Typography>
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell>{asset.quantity}</TableCell>
+                    <TableCell>{formatCurrency((asset.price || 0) * asset.quantity)}</TableCell>
+                    <TableCell>
+                      {asset.warrantyEndDate ? (
+                        <Box>
+                          {new Date(asset.warrantyEndDate).toLocaleDateString()}
+                          {isWarrantyExpiringSoon(asset.warrantyEndDate) && (
+                            <Chip
+                              label="Expiring Soon"
+                              color="warning"
+                              size="small"
+                              sx={{ ml: 1 }}
+                            />
+                          )}
+                        </Box>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={asset.status}
+                        color={getStatusColor(asset.status) as any}
                         size="small"
-                        color="error"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteAsset(asset.id);
-                        }}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {assets.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={9} align="center">
-                    No assets found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                      />
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Tooltip title="Delete">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteAsset(asset.id)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {assets.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center">
+                      No assets found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+        <PaginationControls
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Box>
 
       {/* Create Asset Dialog */}
@@ -574,7 +681,7 @@ export default function AssetsPage() {
       </Dialog>
 
       {/* Asset Detail Dialog */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={detailOpen} onClose={() => { setDetailOpen(false); setEditMode(false); }} maxWidth="md" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
@@ -583,13 +690,85 @@ export default function AssetsPage() {
                 {selectedAsset?.serialNumber || 'No Serial Number'}
               </Typography>
             </Box>
-            <IconButton onClick={() => setDetailOpen(false)}>
-              <CloseIcon />
-            </IconButton>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {!editMode && (
+                <Tooltip title="Edit">
+                  <IconButton onClick={handleStartEdit}>
+                    <EditIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <IconButton onClick={() => { setDetailOpen(false); setEditMode(false); }}>
+                <CloseIcon />
+              </IconButton>
+            </Box>
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedAsset && (
+          {selectedAsset && editMode ? (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Asset Name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Serial Number"
+                  value={editFormData.serialNumber}
+                  onChange={(e) => setEditFormData({ ...editFormData, serialNumber: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    label="Status"
+                  >
+                    <MenuItem value="PURCHASED">Purchased</MenuItem>
+                    <MenuItem value="SHIPPED">Shipped</MenuItem>
+                    <MenuItem value="INSTALLED">Installed</MenuItem>
+                    <MenuItem value="REGISTERED">Registered</MenuItem>
+                    <MenuItem value="OBSOLETE">Obsolete</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  fullWidth
+                  label="Quantity"
+                  type="number"
+                  value={editFormData.quantity}
+                  onChange={(e) => setEditFormData({ ...editFormData, quantity: parseInt(e.target.value) || 1 })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  fullWidth
+                  label="Price"
+                  type="number"
+                  value={editFormData.price}
+                  onChange={(e) => setEditFormData({ ...editFormData, price: parseFloat(e.target.value) || 0 })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Description"
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  multiline
+                  rows={3}
+                />
+              </Grid>
+            </Grid>
+          ) : selectedAsset ? (
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="caption" color="textSecondary">Status</Typography>
@@ -684,10 +863,23 @@ export default function AssetsPage() {
                 </Box>
               </Grid>
             </Grid>
-          )}
+          ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
+          {editMode ? (
+            <>
+              <Button onClick={() => setEditMode(false)}>Cancel</Button>
+              <Button
+                onClick={handleSaveEdit}
+                variant="contained"
+                disabled={!editFormData.name}
+              >
+                Save
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => { setDetailOpen(false); setEditMode(false); }}>Close</Button>
+          )}
         </DialogActions>
       </Dialog>
     </DashboardLayout>

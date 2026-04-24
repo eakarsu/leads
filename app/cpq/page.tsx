@@ -39,6 +39,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import RuleIcon from '@mui/icons-material/Rule';
 import QuizIcon from '@mui/icons-material/Quiz';
@@ -98,6 +100,15 @@ export default function CPQPage() {
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedBundle, setSelectedBundle] = useState<ProductBundle | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    description: '',
+    bundleType: '',
+    basePrice: 0,
+    discountPercent: 0,
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [bundleFormData, setBundleFormData] = useState({
     name: '',
     description: '',
@@ -221,8 +232,42 @@ export default function CPQPage() {
     }
   };
 
+  const handleStartEdit = () => {
+    if (!selectedBundle) return;
+    setEditFormData({
+      name: selectedBundle.name || '',
+      description: selectedBundle.description || '',
+      bundleType: selectedBundle.bundleType || '',
+      basePrice: selectedBundle.basePrice || 0,
+      discountPercent: selectedBundle.discountPercent || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedBundle) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/cpq/bundles', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedBundle.id, ...editFormData }),
+      });
+      if (response.ok) {
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error updating bundle:', error);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleRowClick = (bundle: ProductBundle) => {
     setSelectedBundle(bundle);
+    setEditMode(false);
     setDetailDialogOpen(true);
   };
 
@@ -790,7 +835,7 @@ export default function CPQPage() {
       {/* Bundle Detail Dialog */}
       <Dialog
         open={detailDialogOpen}
-        onClose={() => setDetailDialogOpen(false)}
+        onClose={() => { setDetailDialogOpen(false); setEditMode(false); }}
         maxWidth="md"
         fullWidth
       >
@@ -800,85 +845,152 @@ export default function CPQPage() {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <InventoryIcon color="primary" />
-                  <Typography variant="h6">{selectedBundle.name}</Typography>
+                  <Typography variant="h6">{editMode ? 'Edit Bundle' : selectedBundle.name}</Typography>
                 </Box>
-                <IconButton onClick={() => setDetailDialogOpen(false)}>
+                <IconButton onClick={() => { setDetailDialogOpen(false); setEditMode(false); }}>
                   <CloseIcon />
                 </IconButton>
               </Box>
             </DialogTitle>
             <DialogContent dividers>
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12 }}>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Chip
-                      label={selectedBundle.isActive ? 'Active' : 'Inactive'}
-                      color={selectedBundle.isActive ? 'success' : 'default'}
-                    />
-                    <Chip label={selectedBundle.bundleType} variant="outlined" />
-                    {selectedBundle.discountPercent && (
-                      <Chip label={`${selectedBundle.discountPercent}% discount`} color="info" variant="outlined" />
-                    )}
-                  </Box>
-                </Grid>
-
-                {selectedBundle.description && (
+              {selectedBundle && !editMode && (
+                <Grid container spacing={3}>
                   <Grid size={{ xs: 12 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {selectedBundle.description}
-                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={selectedBundle.isActive ? 'Active' : 'Inactive'}
+                        color={selectedBundle.isActive ? 'success' : 'default'}
+                      />
+                      <Chip label={selectedBundle.bundleType} variant="outlined" />
+                      {selectedBundle.discountPercent && (
+                        <Chip label={`${selectedBundle.discountPercent}% discount`} color="info" variant="outlined" />
+                      )}
+                    </Box>
                   </Grid>
-                )}
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h4" color="primary">
-                      {formatCurrency(selectedBundle.basePrice)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">Base Price</Typography>
-                  </Paper>
-                </Grid>
+                  {selectedBundle.description && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedBundle.description}
+                      </Typography>
+                    </Grid>
+                  )}
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h4">
-                      {selectedBundle.discountPercent || 0}%
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">Bundle Discount</Typography>
-                  </Paper>
-                </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h4" color="primary">
+                        {formatCurrency(selectedBundle.basePrice)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Base Price</Typography>
+                    </Paper>
+                  </Grid>
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h4">
-                      {selectedBundle._count?.items || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">Products</Typography>
-                  </Paper>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h4">
+                        {selectedBundle.discountPercent || 0}%
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Bundle Discount</Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h4">
+                        {selectedBundle._count?.items || 0}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Products</Typography>
+                    </Paper>
+                  </Grid>
                 </Grid>
-              </Grid>
+              )}
+              {selectedBundle && editMode && (
+                <Grid container spacing={2} sx={{ pt: 1 }}>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Description"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      multiline
+                      rows={3}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Bundle Type"
+                      value={editFormData.bundleType}
+                      onChange={(e) => setEditFormData({ ...editFormData, bundleType: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Base Price"
+                      type="number"
+                      value={editFormData.basePrice}
+                      onChange={(e) => setEditFormData({ ...editFormData, basePrice: parseFloat(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Discount Percent"
+                      type="number"
+                      value={editFormData.discountPercent}
+                      onChange={(e) => setEditFormData({ ...editFormData, discountPercent: parseFloat(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                </Grid>
+              )}
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
-              <Button
-                startIcon={<CheckCircleIcon />}
-                onClick={(e) => {
-                  handleToggleBundleActive(selectedBundle.id, !selectedBundle.isActive, e);
-                  setDetailDialogOpen(false);
-                }}
-              >
-                {selectedBundle.isActive ? 'Deactivate' : 'Activate'}
-              </Button>
-              <Button
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={(e) => {
-                  handleDeleteBundle(selectedBundle.id, e);
-                  setDetailDialogOpen(false);
-                }}
-              >
-                Delete
-              </Button>
-              <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
+              {!editMode ? (
+                <>
+                  <Button
+                    startIcon={<CheckCircleIcon />}
+                    onClick={(e) => {
+                      handleToggleBundleActive(selectedBundle.id, !selectedBundle.isActive, e);
+                      setDetailDialogOpen(false);
+                    }}
+                  >
+                    {selectedBundle.isActive ? 'Deactivate' : 'Activate'}
+                  </Button>
+                  <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
+                  <Button startIcon={<EditIcon />} onClick={handleStartEdit}>Edit</Button>
+                  <Button
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={(e) => {
+                      handleDeleteBundle(selectedBundle.id, e);
+                      setDetailDialogOpen(false);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button startIcon={<CloseIcon />} onClick={() => setEditMode(false)}>Cancel</Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveEdit}
+                    disabled={editSaving}
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </>
+              )}
             </DialogActions>
           </>
         )}

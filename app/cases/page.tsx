@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -39,7 +38,18 @@ import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Cancel';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Case {
   id: string;
@@ -50,12 +60,23 @@ interface Case {
   priority: string;
   origin: string;
   type: string | null;
+  reason: string | null;
   account: { id: string; name: string } | null;
   createdAt: string;
 }
 
+const columns: Column[] = [
+  { id: 'caseNumber', label: 'Case Number' },
+  { id: 'subject', label: 'Subject' },
+  { id: 'account', label: 'Account', sortable: false },
+  { id: 'priority', label: 'Priority' },
+  { id: 'origin', label: 'Origin' },
+  { id: 'status', label: 'Status' },
+  { id: 'createdAt', label: 'Created' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function CasesPage() {
-  const [cases, setCases] = useState<Case[]>([]);
   const [stats, setStats] = useState({
     totalCases: 0,
     newCases: 0,
@@ -64,7 +85,6 @@ export default function CasesPage() {
     escalatedCases: 0,
     closedCases: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -80,21 +100,47 @@ export default function CasesPage() {
     accountId: '',
   });
 
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    subject: '',
+    description: '',
+    status: '',
+    priority: '',
+    origin: '',
+    type: '',
+    reason: '',
+  });
+
+  const [sortBy, setSortByLocal] = useState('createdAt');
+  const [sortOrder, setSortOrderLocal] = useState<'asc' | 'desc'>('desc');
+
+  const { data: cases, loading, error, pagination, setPage, setPageSize, setSort, refresh } = usePagination<Case>({
+    url: '/api/cases',
+    defaultSortBy: 'createdAt',
+  });
+
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByLocal(col);
+    setSortOrderLocal(newOrder);
+    setSort(col, newOrder);
+  };
+
   useEffect(() => {
-    fetchCases();
+    fetchStats();
     fetchAccounts();
   }, []);
 
-  const fetchCases = async () => {
+  const fetchStats = async () => {
     try {
       const response = await fetch('/api/cases');
       const data = await response.json();
-      setCases(data.cases || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching cases:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -102,7 +148,7 @@ export default function CasesPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -118,11 +164,16 @@ export default function CasesPage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchCases();
+        refresh();
+        fetchStats();
         resetForm();
+        toast.showSuccess('Case created successfully');
+      } else {
+        toast.showError('Failed to create case');
       }
     } catch (error) {
       console.error('Error creating case:', error);
+      toast.showError('Error creating case');
     }
   };
 
@@ -133,10 +184,38 @@ export default function CasesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      fetchCases();
+      refresh();
+      fetchStats();
       setDetailOpen(false);
+      toast.showSuccess(`Case ${status === 'CLOSED' ? 'closed' : 'escalated'} successfully`);
     } catch (error) {
       console.error('Error updating case:', error);
+      toast.showError('Error updating case status');
+    }
+  };
+
+  const handleDeleteCase = async (caseId: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Case',
+      message: 'Are you sure you want to delete this case? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/cases/${caseId}`, { method: 'DELETE' });
+      if (response.ok) {
+        refresh();
+        fetchStats();
+        setDetailOpen(false);
+        toast.showSuccess('Case deleted successfully');
+      } else {
+        toast.showError('Failed to delete case');
+      }
+    } catch (error) {
+      console.error('Error deleting case:', error);
+      toast.showError('Error deleting case');
     }
   };
 
@@ -149,6 +228,48 @@ export default function CasesPage() {
       type: '',
       accountId: '',
     });
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedCase) return;
+    setEditFormData({
+      subject: selectedCase.subject || '',
+      description: selectedCase.description || '',
+      status: selectedCase.status || '',
+      priority: selectedCase.priority || '',
+      origin: selectedCase.origin || '',
+      type: selectedCase.type || '',
+      reason: selectedCase.reason || '',
+    });
+    setEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedCase) return;
+    try {
+      const response = await fetch(`/api/cases/${selectedCase.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+
+      if (response.ok) {
+        setEditMode(false);
+        setDetailOpen(false);
+        refresh();
+        fetchStats();
+        toast.showSuccess('Case updated successfully');
+      } else {
+        toast.showError('Failed to update case');
+      }
+    } catch (error) {
+      console.error('Error updating case:', error);
+      toast.showError('Error updating case');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -184,14 +305,12 @@ export default function CasesPage() {
   };
 
   const filteredCases = cases.filter((c) => {
-    // Search filter
     const searchLower = search.toLowerCase();
     const matchesSearch = !search ||
       c.caseNumber.toLowerCase().includes(searchLower) ||
       c.subject.toLowerCase().includes(searchLower) ||
       c.account?.name.toLowerCase().includes(searchLower);
 
-    // Tab filter
     let matchesTab = true;
     if (tabValue === 1) matchesTab = c.status === 'NEW';
     else if (tabValue === 2) matchesTab = c.status === 'OPEN' || c.status === 'IN_PROGRESS';
@@ -201,18 +320,31 @@ export default function CasesPage() {
     return matchesSearch && matchesTab;
   });
 
+  const exportData = filteredCases.map((c) => ({
+    'Case Number': c.caseNumber,
+    Subject: c.subject,
+    Account: c.account?.name || '-',
+    Priority: c.priority,
+    Origin: c.origin,
+    Status: c.status,
+    Created: new Date(c.createdAt).toLocaleDateString(),
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Cases</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Case
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="cases" title="Cases Export" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Case
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -298,92 +430,97 @@ export default function CasesPage() {
         </Paper>
 
         {/* Cases Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Case Number</TableCell>
-                <TableCell>Subject</TableCell>
-                <TableCell>Account</TableCell>
-                <TableCell>Priority</TableCell>
-                <TableCell>Origin</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredCases.map((caseItem) => (
-                <TableRow
-                  key={caseItem.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    setSelectedCase(caseItem);
-                    setDetailOpen(true);
-                  }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold" color="primary">
-                      {caseItem.caseNumber}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{caseItem.subject}</Typography>
-                    {caseItem.type && (
-                      <Typography variant="caption" color="textSecondary">
-                        {caseItem.type}
+        {loading ? (
+          <TableSkeleton rows={8} columns={8} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={columns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {filteredCases.map((caseItem) => (
+                  <TableRow
+                    key={caseItem.id}
+                    hover
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      setSelectedCase(caseItem);
+                      setDetailOpen(true);
+                    }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold" color="primary">
+                        {caseItem.caseNumber}
                       </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>{caseItem.account?.name || '-'}</TableCell>
-                  <TableCell>
-                    <Chip
-                      icon={caseItem.priority === 'CRITICAL' ? <PriorityHighIcon /> : undefined}
-                      label={caseItem.priority}
-                      color={getPriorityColor(caseItem.priority) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>{caseItem.origin}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={caseItem.status.replace('_', ' ')}
-                      color={getStatusColor(caseItem.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {new Date(caseItem.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {caseItem.status !== 'CLOSED' && (
-                      <Tooltip title="Close Case">
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUpdateStatus(caseItem.id, 'CLOSED');
-                          }}
-                        >
-                          <CheckCircleIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredCases.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No cases found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{caseItem.subject}</Typography>
+                      {caseItem.type && (
+                        <Typography variant="caption" color="textSecondary">
+                          {caseItem.type}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>{caseItem.account?.name || '-'}</TableCell>
+                    <TableCell>
+                      <Chip
+                        icon={caseItem.priority === 'CRITICAL' ? <PriorityHighIcon /> : undefined}
+                        label={caseItem.priority}
+                        color={getPriorityColor(caseItem.priority) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>{caseItem.origin}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={caseItem.status.replace('_', ' ')}
+                        color={getStatusColor(caseItem.status) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {new Date(caseItem.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      {caseItem.status !== 'CLOSED' && (
+                        <Tooltip title="Close Case">
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpdateStatus(caseItem.id, 'CLOSED');
+                            }}
+                          >
+                            <CheckCircleIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredCases.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center">
+                      No cases found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Create Case Dialog */}
@@ -488,20 +625,25 @@ export default function CasesPage() {
       </Dialog>
 
       {/* Case Detail Dialog */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={detailOpen} onClose={() => { setDetailOpen(false); setEditMode(false); }} maxWidth="md" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
               <Typography variant="h6">{selectedCase?.caseNumber}</Typography>
-              <Typography variant="body2" color="textSecondary">{selectedCase?.subject}</Typography>
+              {!editMode && (
+                <Typography variant="body2" color="textSecondary">{selectedCase?.subject}</Typography>
+              )}
+              {editMode && (
+                <Typography variant="body2" color="primary">Editing Case</Typography>
+              )}
             </Box>
-            <IconButton onClick={() => setDetailOpen(false)}>
+            <IconButton onClick={() => { setDetailOpen(false); setEditMode(false); }}>
               <CloseIcon />
             </IconButton>
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedCase && (
+          {selectedCase && !editMode && (
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="caption" color="textSecondary">Status</Typography>
@@ -539,7 +681,11 @@ export default function CasesPage() {
                 <Typography variant="caption" color="textSecondary">Type</Typography>
                 <Typography variant="body1">{selectedCase.type || '-'}</Typography>
               </Grid>
-              <Grid size={{ xs: 12 }}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Typography variant="caption" color="textSecondary">Reason</Typography>
+                <Typography variant="body1">{selectedCase.reason || '-'}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <Typography variant="caption" color="textSecondary">Created</Typography>
                 <Typography variant="body1">
                   {new Date(selectedCase.createdAt).toLocaleString()}
@@ -547,26 +693,170 @@ export default function CasesPage() {
               </Grid>
             </Grid>
           )}
+          {selectedCase && editMode && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Subject *"
+                  value={editFormData.subject}
+                  onChange={(e) => setEditFormData({ ...editFormData, subject: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Description"
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  multiline
+                  rows={4}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    label="Status"
+                  >
+                    <MenuItem value="NEW">New</MenuItem>
+                    <MenuItem value="OPEN">Open</MenuItem>
+                    <MenuItem value="IN_PROGRESS">In Progress</MenuItem>
+                    <MenuItem value="ESCALATED">Escalated</MenuItem>
+                    <MenuItem value="ON_HOLD">On Hold</MenuItem>
+                    <MenuItem value="WAITING_ON_CUSTOMER">Waiting on Customer</MenuItem>
+                    <MenuItem value="RESOLVED">Resolved</MenuItem>
+                    <MenuItem value="CLOSED">Closed</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Priority</InputLabel>
+                  <Select
+                    value={editFormData.priority}
+                    onChange={(e) => setEditFormData({ ...editFormData, priority: e.target.value })}
+                    label="Priority"
+                  >
+                    <MenuItem value="LOW">Low</MenuItem>
+                    <MenuItem value="MEDIUM">Medium</MenuItem>
+                    <MenuItem value="HIGH">High</MenuItem>
+                    <MenuItem value="CRITICAL">Critical</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Origin</InputLabel>
+                  <Select
+                    value={editFormData.origin}
+                    onChange={(e) => setEditFormData({ ...editFormData, origin: e.target.value })}
+                    label="Origin"
+                  >
+                    <MenuItem value="WEB">Web</MenuItem>
+                    <MenuItem value="EMAIL">Email</MenuItem>
+                    <MenuItem value="PHONE">Phone</MenuItem>
+                    <MenuItem value="CHAT">Chat</MenuItem>
+                    <MenuItem value="SOCIAL">Social</MenuItem>
+                    <MenuItem value="PARTNER">Partner</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Type</InputLabel>
+                  <Select
+                    value={editFormData.type}
+                    onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value })}
+                    label="Type"
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    <MenuItem value="Bug">Bug</MenuItem>
+                    <MenuItem value="Feature Request">Feature Request</MenuItem>
+                    <MenuItem value="Question">Question</MenuItem>
+                    <MenuItem value="How-to">How-to</MenuItem>
+                    <MenuItem value="Problem">Problem</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Reason</InputLabel>
+                  <Select
+                    value={editFormData.reason}
+                    onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })}
+                    label="Reason"
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    <MenuItem value="Installation">Installation</MenuItem>
+                    <MenuItem value="User Education">User Education</MenuItem>
+                    <MenuItem value="Performance">Performance</MenuItem>
+                    <MenuItem value="Breakdown">Breakdown</MenuItem>
+                    <MenuItem value="Feedback">Feedback</MenuItem>
+                    <MenuItem value="Other">Other</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          )}
         </DialogContent>
         <DialogActions>
-          {selectedCase && selectedCase.status !== 'CLOSED' && (
+          {selectedCase && editMode && (
             <>
               <Button
-                color="warning"
-                onClick={() => handleUpdateStatus(selectedCase.id, 'ESCALATED')}
+                onClick={handleCancelEdit}
+                startIcon={<CancelIcon />}
               >
-                Escalate
+                Cancel
               </Button>
               <Button
-                color="success"
                 variant="contained"
-                onClick={() => handleUpdateStatus(selectedCase.id, 'CLOSED')}
+                startIcon={<SaveIcon />}
+                onClick={handleSaveEdit}
+                disabled={!editFormData.subject}
               >
-                Close Case
+                Save
               </Button>
             </>
           )}
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
+          {selectedCase && !editMode && (
+            <>
+              {selectedCase.status !== 'CLOSED' && (
+                <>
+                  <Button
+                    color="warning"
+                    onClick={() => handleUpdateStatus(selectedCase.id, 'ESCALATED')}
+                  >
+                    Escalate
+                  </Button>
+                  <Button
+                    color="success"
+                    variant="contained"
+                    onClick={() => handleUpdateStatus(selectedCase.id, 'CLOSED')}
+                  >
+                    Close Case
+                  </Button>
+                </>
+              )}
+              <Button
+                color="primary"
+                startIcon={<EditIcon />}
+                onClick={handleStartEdit}
+              >
+                Edit
+              </Button>
+              <Button
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => handleDeleteCase(selectedCase.id)}
+              >
+                Delete
+              </Button>
+              <Button onClick={() => setDetailOpen(false)}>Close</Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </DashboardLayout>

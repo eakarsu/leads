@@ -292,7 +292,7 @@ export default function OpportunityDetailPage() {
     return (amount * probability) / 100;
   };
 
-  const lineItemsTotal = opportunity.lineItems.reduce(
+  const lineItemsTotal = (opportunity.lineItems || []).reduce(
     (sum, item) => sum + item.totalPrice,
     0
   );
@@ -370,7 +370,7 @@ export default function OpportunityDetailPage() {
                     <Typography variant="body2" color="text.secondary">
                       Client
                     </Typography>
-                    <Typography variant="body1">{opportunity.client.name}</Typography>
+                    <Typography variant="body1">{opportunity.client?.name || '-'}</Typography>
                   </Grid>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
@@ -397,7 +397,7 @@ export default function OpportunityDetailPage() {
                     <Typography variant="body2" color="text.secondary">
                       Owner
                     </Typography>
-                    <Typography variant="body1">{opportunity.owner.name}</Typography>
+                    <Typography variant="body1">{opportunity.owner?.name || '-'}</Typography>
                   </Grid>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="body2" color="text.secondary">
@@ -474,7 +474,7 @@ export default function OpportunityDetailPage() {
                   Line Items
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
-                {opportunity.lineItems.length === 0 ? (
+                {(opportunity.lineItems || []).length === 0 ? (
                   <Typography color="text.secondary">No line items added yet</Typography>
                 ) : (
                   <TableContainer component={Paper} elevation={0}>
@@ -489,7 +489,7 @@ export default function OpportunityDetailPage() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {opportunity.lineItems.map((item) => (
+                        {(opportunity.lineItems || []).map((item) => (
                           <TableRow key={item.id}>
                             <TableCell>{item.productName}</TableCell>
                             <TableCell align="right">{item.quantity}</TableCell>
@@ -522,14 +522,14 @@ export default function OpportunityDetailPage() {
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  Tasks ({opportunity.tasks.length})
+                  Tasks ({(opportunity.tasks || []).length})
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
-                {opportunity.tasks.length === 0 ? (
+                {(opportunity.tasks || []).length === 0 ? (
                   <Typography color="text.secondary">No tasks</Typography>
                 ) : (
                   <List>
-                    {opportunity.tasks.map((task) => (
+                    {(opportunity.tasks || []).map((task) => (
                       <ListItem key={task.id} divider>
                         <ListItemText
                           primary={
@@ -548,7 +548,7 @@ export default function OpportunityDetailPage() {
                             </Box>
                           }
                           secondary={`Due: ${formatDate(task.dueDate)} | Assigned to: ${
-                            task.assignee.name
+                            task.assignee?.name || 'Unassigned'
                           }`}
                         />
                       </ListItem>
@@ -563,14 +563,14 @@ export default function OpportunityDetailPage() {
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  Events ({opportunity.events.length})
+                  Events ({(opportunity.events || []).length})
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
-                {opportunity.events.length === 0 ? (
+                {(opportunity.events || []).length === 0 ? (
                   <Typography color="text.secondary">No events</Typography>
                 ) : (
                   <List>
-                    {opportunity.events.map((event) => (
+                    {(opportunity.events || []).map((event) => (
                       <ListItem key={event.id} divider>
                         <ListItemText
                           primary={
@@ -581,7 +581,7 @@ export default function OpportunityDetailPage() {
                           }
                           secondary={`${formatDateTime(event.startTime)} - ${formatDateTime(
                             event.endTime
-                          )} | Owner: ${event.owner.name}`}
+                          )} | Owner: ${event.owner?.name || 'Unknown'}`}
                         />
                       </ListItem>
                     ))}
@@ -604,7 +604,7 @@ export default function OpportunityDetailPage() {
           <Grid size={{ xs: 12, md: 6 }}>
             <NotesSection
               opportunityId={id}
-              currentUserId={opportunity?.owner.id}
+              currentUserId={opportunity?.owner?.id}
             />
           </Grid>
 
@@ -612,7 +612,7 @@ export default function OpportunityDetailPage() {
           <Grid size={{ xs: 12, md: 6 }}>
             <AttachmentsSection
               opportunityId={id}
-              currentUserId={opportunity?.owner.id}
+              currentUserId={opportunity?.owner?.id}
             />
           </Grid>
 

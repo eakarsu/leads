@@ -70,7 +70,7 @@ export default function ActivityTimeline({
       const response = await fetch(`/api/timeline?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch timeline');
       const data = await response.json();
-      setActivities(data);
+      setActivities(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       setError(err.message);
     } finally {

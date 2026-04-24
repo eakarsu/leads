@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 // GET - List assets
 export async function GET(request: NextRequest) {
@@ -10,6 +11,8 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(request);
 
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get('accountId');
@@ -38,9 +41,11 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    const total = await prisma.asset.count({ where: whereClause });
+
     const assets = await prisma.asset.findMany({
       where: whereClause,
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for assets
@@ -80,7 +85,7 @@ export async function GET(request: NextRequest) {
       totalValue: assetsWithRelations.reduce((sum, a) => sum + (typeof a.price === 'number' ? a.price : 0) * (a.quantity || 1), 0),
     };
 
-    return NextResponse.json({ assets: assetsWithRelations, stats });
+    return NextResponse.json(buildPaginatedResponse(assetsWithRelations, total, paginationParams));
   } catch (error) {
     console.error('Error fetching assets:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

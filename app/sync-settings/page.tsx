@@ -46,7 +46,11 @@ import WarningIcon from '@mui/icons-material/Warning';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsIcon from '@mui/icons-material/Settings';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 import DashboardLayout from '@/components/DashboardLayout';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
+import { useToast } from '@/components/ToastProvider';
 
 interface EmailSyncAccount {
   id: string;
@@ -103,6 +107,23 @@ export default function SyncSettingsPage() {
     syncDirection: 'BOTH',
     defaultReminder: 15,
   });
+
+  // Email detail dialog state
+  const [selectedEmailAccount, setSelectedEmailAccount] = useState<EmailSyncAccount | null>(null);
+  const [emailDetailOpen, setEmailDetailOpen] = useState(false);
+  const [emailEditMode, setEmailEditMode] = useState(false);
+  const [emailEditFormData, setEmailEditFormData] = useState({ syncEnabled: true, syncDirection: 'BOTH' });
+  const [emailEditSaving, setEmailEditSaving] = useState(false);
+
+  // Calendar detail dialog state
+  const [selectedCalAccount, setSelectedCalAccount] = useState<CalendarSyncAccount | null>(null);
+  const [calDetailOpen, setCalDetailOpen] = useState(false);
+  const [calEditMode, setCalEditMode] = useState(false);
+  const [calEditFormData, setCalEditFormData] = useState({ syncEnabled: true, syncDirection: 'BOTH' });
+  const [calEditSaving, setCalEditSaving] = useState(false);
+
+  const { confirm } = useConfirmDialog();
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     fetchData();
@@ -185,24 +206,116 @@ export default function SyncSettingsPage() {
   };
 
   const handleDeleteEmailAccount = async (accountId: string) => {
-    if (!confirm('Are you sure you want to remove this email account?')) return;
+    const confirmed = await confirm({
+      title: 'Remove Email Account',
+      message: 'Are you sure you want to remove this email account?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/sync-settings/email?id=${accountId}`, { method: 'DELETE' });
+      showSuccess('Email account removed');
+      setEmailDetailOpen(false);
+      setSelectedEmailAccount(null);
       fetchData();
     } catch (error) {
       console.error('Error deleting email account:', error);
+      showError('Failed to delete email account');
     }
   };
 
   const handleDeleteCalendarAccount = async (accountId: string) => {
-    if (!confirm('Are you sure you want to remove this calendar account?')) return;
+    const confirmed = await confirm({
+      title: 'Remove Calendar Account',
+      message: 'Are you sure you want to remove this calendar account?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/sync-settings/calendar?id=${accountId}`, { method: 'DELETE' });
+      showSuccess('Calendar account removed');
+      setCalDetailOpen(false);
+      setSelectedCalAccount(null);
       fetchData();
     } catch (error) {
       console.error('Error deleting calendar account:', error);
+      showError('Failed to delete calendar account');
+    }
+  };
+
+  // Email detail handlers
+  const handleEmailRowClick = (account: EmailSyncAccount) => {
+    setSelectedEmailAccount(account);
+    setEmailEditMode(false);
+    setEmailDetailOpen(true);
+  };
+
+  const handleStartEmailEdit = () => {
+    if (!selectedEmailAccount) return;
+    setEmailEditFormData({
+      syncEnabled: selectedEmailAccount.syncEnabled,
+      syncDirection: selectedEmailAccount.syncDirection,
+    });
+    setEmailEditMode(true);
+  };
+
+  const handleSaveEmailEdit = async () => {
+    if (!selectedEmailAccount) return;
+    setEmailEditSaving(true);
+    try {
+      await fetch('/api/sync-settings/email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedEmailAccount.id, ...emailEditFormData }),
+      });
+      showSuccess('Email account updated');
+      setEmailEditMode(false);
+      setEmailDetailOpen(false);
+      fetchData();
+    } catch (error) {
+      showError('Failed to update email account');
+    } finally {
+      setEmailEditSaving(false);
+    }
+  };
+
+  // Calendar detail handlers
+  const handleCalRowClick = (account: CalendarSyncAccount) => {
+    setSelectedCalAccount(account);
+    setCalEditMode(false);
+    setCalDetailOpen(true);
+  };
+
+  const handleStartCalEdit = () => {
+    if (!selectedCalAccount) return;
+    setCalEditFormData({
+      syncEnabled: selectedCalAccount.syncEnabled,
+      syncDirection: selectedCalAccount.syncDirection,
+    });
+    setCalEditMode(true);
+  };
+
+  const handleSaveCalEdit = async () => {
+    if (!selectedCalAccount) return;
+    setCalEditSaving(true);
+    try {
+      await fetch('/api/sync-settings/calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedCalAccount.id, ...calEditFormData }),
+      });
+      showSuccess('Calendar account updated');
+      setCalEditMode(false);
+      setCalDetailOpen(false);
+      fetchData();
+    } catch (error) {
+      showError('Failed to update calendar account');
+    } finally {
+      setCalEditSaving(false);
     }
   };
 
@@ -383,7 +496,7 @@ export default function SyncSettingsPage() {
                 </TableHead>
                 <TableBody>
                   {emailAccounts.map((account) => (
-                    <TableRow key={account.id}>
+                    <TableRow key={account.id} hover sx={{ cursor: 'pointer' }} onClick={() => handleEmailRowClick(account)}>
                       <TableCell>
                         <Typography variant="body2" fontWeight="bold">
                           {account.email}
@@ -411,7 +524,7 @@ export default function SyncSettingsPage() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }} onClick={(e) => e.stopPropagation()}>
                           {getSyncStatusIcon(account.syncStatus)}
                           <Switch
                             size="small"
@@ -424,7 +537,7 @@ export default function SyncSettingsPage() {
                         <Tooltip title="Sync Now">
                           <IconButton
                             size="small"
-                            onClick={() => handleSyncNow('email', account.id)}
+                            onClick={(e) => { e.stopPropagation(); handleSyncNow('email', account.id); }}
                           >
                             <RefreshIcon />
                           </IconButton>
@@ -433,7 +546,7 @@ export default function SyncSettingsPage() {
                           <IconButton
                             size="small"
                             color="error"
-                            onClick={() => handleDeleteEmailAccount(account.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteEmailAccount(account.id); }}
                           >
                             <DeleteIcon />
                           </IconButton>
@@ -495,7 +608,7 @@ export default function SyncSettingsPage() {
                 </TableHead>
                 <TableBody>
                   {calendarAccounts.map((account) => (
-                    <TableRow key={account.id}>
+                    <TableRow key={account.id} hover sx={{ cursor: 'pointer' }} onClick={() => handleCalRowClick(account)}>
                       <TableCell>
                         <Typography variant="body2" fontWeight="bold">
                           {account.email}
@@ -520,7 +633,7 @@ export default function SyncSettingsPage() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }} onClick={(e) => e.stopPropagation()}>
                           {getSyncStatusIcon(account.syncStatus)}
                           <Switch
                             size="small"
@@ -533,7 +646,7 @@ export default function SyncSettingsPage() {
                         <Tooltip title="Sync Now">
                           <IconButton
                             size="small"
-                            onClick={() => handleSyncNow('calendar', account.id)}
+                            onClick={(e) => { e.stopPropagation(); handleSyncNow('calendar', account.id); }}
                           >
                             <RefreshIcon />
                           </IconButton>
@@ -542,7 +655,7 @@ export default function SyncSettingsPage() {
                           <IconButton
                             size="small"
                             color="error"
-                            onClick={() => handleDeleteCalendarAccount(account.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteCalendarAccount(account.id); }}
                           >
                             <DeleteIcon />
                           </IconButton>
@@ -576,6 +689,174 @@ export default function SyncSettingsPage() {
           </>
         )}
       </Box>
+
+      {/* Email Account Detail Dialog */}
+      <Dialog open={emailDetailOpen} onClose={() => { setEmailDetailOpen(false); setEmailEditMode(false); }} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {emailEditMode ? 'Edit Email Account' : 'Email Account Details'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedEmailAccount && !emailEditMode && (
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary">Email</Typography>
+              <Typography gutterBottom>{selectedEmailAccount.email}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Provider</Typography>
+              <Typography gutterBottom>{selectedEmailAccount.provider}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Enabled</Typography>
+              <Typography gutterBottom>{selectedEmailAccount.syncEnabled ? 'Yes' : 'No'}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Direction</Typography>
+              <Typography gutterBottom>{selectedEmailAccount.syncDirection}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Folders</Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                {selectedEmailAccount.syncFolders.map((folder, i) => (
+                  <Chip key={i} label={folder} size="small" variant="outlined" />
+                ))}
+              </Box>
+              <Typography variant="subtitle2" color="text.secondary">Last Sync</Typography>
+              <Typography gutterBottom>{formatDate(selectedEmailAccount.lastSyncAt)}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Status</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                {getSyncStatusIcon(selectedEmailAccount.syncStatus)}
+                <Typography>{selectedEmailAccount.syncStatus || 'Unknown'}</Typography>
+              </Box>
+              {selectedEmailAccount.syncError && (
+                <>
+                  <Typography variant="subtitle2" color="text.secondary">Sync Error</Typography>
+                  <Typography gutterBottom color="error">{selectedEmailAccount.syncError}</Typography>
+                </>
+              )}
+              <Typography variant="subtitle2" color="text.secondary">Created</Typography>
+              <Typography>{new Date(selectedEmailAccount.createdAt).toLocaleString()}</Typography>
+            </Box>
+          )}
+          {selectedEmailAccount && emailEditMode && (
+            <Box>
+              <TextField
+                select
+                label="Sync Enabled"
+                value={emailEditFormData.syncEnabled ? 'Yes' : 'No'}
+                onChange={(e) => setEmailEditFormData({ ...emailEditFormData, syncEnabled: e.target.value === 'Yes' })}
+                fullWidth
+                margin="normal"
+              >
+                <MenuItem value="Yes">Yes</MenuItem>
+                <MenuItem value="No">No</MenuItem>
+              </TextField>
+              <TextField
+                select
+                label="Sync Direction"
+                value={emailEditFormData.syncDirection}
+                onChange={(e) => setEmailEditFormData({ ...emailEditFormData, syncDirection: e.target.value })}
+                fullWidth
+                margin="normal"
+              >
+                <MenuItem value="INBOUND">Inbound Only</MenuItem>
+                <MenuItem value="OUTBOUND">Outbound Only</MenuItem>
+                <MenuItem value="BOTH">Both Directions</MenuItem>
+              </TextField>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {!emailEditMode ? (
+            <>
+              <Button onClick={() => { setEmailDetailOpen(false); setEmailEditMode(false); }}>Close</Button>
+              <Button startIcon={<EditIcon />} onClick={handleStartEmailEdit}>Edit</Button>
+              <Button startIcon={<DeleteIcon />} color="error" onClick={() => selectedEmailAccount && handleDeleteEmailAccount(selectedEmailAccount.id)}>Delete</Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={() => setEmailEditMode(false)} startIcon={<CloseIcon />}>Cancel</Button>
+              <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveEmailEdit} disabled={emailEditSaving}>
+                {emailEditSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Calendar Account Detail Dialog */}
+      <Dialog open={calDetailOpen} onClose={() => { setCalDetailOpen(false); setCalEditMode(false); }} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {calEditMode ? 'Edit Calendar Account' : 'Calendar Account Details'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedCalAccount && !calEditMode && (
+            <Box>
+              <Typography variant="subtitle2" color="text.secondary">Email</Typography>
+              <Typography gutterBottom>{selectedCalAccount.email}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Provider</Typography>
+              <Typography gutterBottom>{selectedCalAccount.provider}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Calendar Name</Typography>
+              <Typography gutterBottom>{selectedCalAccount.calendarName || 'N/A'}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Enabled</Typography>
+              <Typography gutterBottom>{selectedCalAccount.syncEnabled ? 'Yes' : 'No'}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Direction</Typography>
+              <Typography gutterBottom>{selectedCalAccount.syncDirection}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Default Reminder</Typography>
+              <Typography gutterBottom>{selectedCalAccount.defaultReminder ? `${selectedCalAccount.defaultReminder} min` : 'N/A'}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Last Sync</Typography>
+              <Typography gutterBottom>{formatDate(selectedCalAccount.lastSyncAt)}</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Sync Status</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                {getSyncStatusIcon(selectedCalAccount.syncStatus)}
+                <Typography>{selectedCalAccount.syncStatus || 'Unknown'}</Typography>
+              </Box>
+              {selectedCalAccount.syncError && (
+                <>
+                  <Typography variant="subtitle2" color="text.secondary">Sync Error</Typography>
+                  <Typography gutterBottom color="error">{selectedCalAccount.syncError}</Typography>
+                </>
+              )}
+              <Typography variant="subtitle2" color="text.secondary">Created</Typography>
+              <Typography>{new Date(selectedCalAccount.createdAt).toLocaleString()}</Typography>
+            </Box>
+          )}
+          {selectedCalAccount && calEditMode && (
+            <Box>
+              <TextField
+                select
+                label="Sync Enabled"
+                value={calEditFormData.syncEnabled ? 'Yes' : 'No'}
+                onChange={(e) => setCalEditFormData({ ...calEditFormData, syncEnabled: e.target.value === 'Yes' })}
+                fullWidth
+                margin="normal"
+              >
+                <MenuItem value="Yes">Yes</MenuItem>
+                <MenuItem value="No">No</MenuItem>
+              </TextField>
+              <TextField
+                select
+                label="Sync Direction"
+                value={calEditFormData.syncDirection}
+                onChange={(e) => setCalEditFormData({ ...calEditFormData, syncDirection: e.target.value })}
+                fullWidth
+                margin="normal"
+              >
+                <MenuItem value="INBOUND">Inbound Only</MenuItem>
+                <MenuItem value="OUTBOUND">Outbound Only</MenuItem>
+                <MenuItem value="BOTH">Both Directions</MenuItem>
+              </TextField>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {!calEditMode ? (
+            <>
+              <Button onClick={() => { setCalDetailOpen(false); setCalEditMode(false); }}>Close</Button>
+              <Button startIcon={<EditIcon />} onClick={handleStartCalEdit}>Edit</Button>
+              <Button startIcon={<DeleteIcon />} color="error" onClick={() => selectedCalAccount && handleDeleteCalendarAccount(selectedCalAccount.id)}>Delete</Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={() => setCalEditMode(false)} startIcon={<CloseIcon />}>Cancel</Button>
+              <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveCalEdit} disabled={calEditSaving}>
+                {calEditSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
 
       {/* Add Email Account Dialog */}
       <Dialog open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} maxWidth="sm" fullWidth>

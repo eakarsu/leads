@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,22 +11,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const leadId = searchParams.get('leadId');
     const type = searchParams.get('type');
-    const limit = searchParams.get('limit');
     const campaignId = searchParams.get('campaignId');
 
+    const where = {
+      ...(leadId && { leadId }),
+      ...(type && { type: type as any }),
+      ...(campaignId && {
+        lead: {
+          campaignId: campaignId,
+        },
+      }),
+    };
+
+    const total = await prisma.leadActivity.count({ where });
+
     const activities = await prisma.leadActivity.findMany({
-      where: {
-        ...(leadId && { leadId }),
-        ...(type && { type: type as any }),
-        ...(campaignId && {
-          lead: {
-            campaignId: campaignId,
-          },
-        }),
-      },
+      where,
       include: {
         lead: {
           select: {
@@ -42,13 +48,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        timestamp: 'desc',
-      },
-      ...(limit && { take: parseInt(limit) }),
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(activities);
+    return NextResponse.json(buildPaginatedResponse(activities, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching activities:', error);
     return NextResponse.json(

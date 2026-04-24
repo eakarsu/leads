@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
@@ -18,13 +21,15 @@ export async function GET(req: NextRequest) {
     if (status) where.status = status;
     if (accountId) where.accountId = accountId;
 
+    const total = await prisma.contract.count({ where });
+
     const contracts = await prisma.contract.findMany({
       where,
       include: {
         lineItems: true,
         _count: { select: { lineItems: true, renewals: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for contracts
@@ -57,7 +62,7 @@ export async function GET(req: NextRequest) {
       }).length,
     };
 
-    return NextResponse.json({ contracts: contractsWithAccounts, stats });
+    return NextResponse.json(buildPaginatedResponse(contractsWithAccounts, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching contracts:', error);
     return NextResponse.json({ error: 'Failed to fetch contracts' }, { status: 500 });

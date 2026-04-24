@@ -101,7 +101,7 @@ export default function ForecastingPage() {
       const response = await fetch('/api/clients');
       if (!response.ok) throw new Error('Failed to fetch clients');
       const data = await response.json();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching clients:', err);
     }

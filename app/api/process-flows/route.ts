@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,6 +11,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(request);
+
     const { searchParams } = new URL(request.url);
     const objectType = searchParams.get('objectType');
     const isActive = searchParams.get('isActive');
@@ -17,6 +20,8 @@ export async function GET(request: NextRequest) {
     const where: any = {};
     if (objectType) where.objectType = objectType;
     if (isActive !== null) where.isActive = isActive === 'true';
+
+    const total = await prisma.processFlow.count({ where });
 
     const flows = await prisma.processFlow.findMany({
       where,
@@ -34,12 +39,10 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(flows);
+    return NextResponse.json(buildPaginatedResponse(flows, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching process flows:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

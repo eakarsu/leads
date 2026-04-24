@@ -1,0 +1,114 @@
+ Testing Instructions
+
+  1. Start the dev server
+
+  npm run dev
+
+  2. Log in
+
+  Go to http://localhost:3000/login and use:
+  - Email: admin@leadgenflow.com
+  - Password: password123
+
+  3. Test the new features via sidebar navigation
+
+  Field Service (sidebar menu):
+
+  ┌──────────────────────┬───────────────────────┬─────────────────────────────────────────────────┐
+  │         Page         │          URL          │                  What to test                   │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Work Orders          │ /work-orders          │ 15 records, status/priority badges, stats cards │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Service Appointments │ /service-appointments │ 10 records, status tracking                     │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Scheduling Wizard    │ /scheduling           │ 5-step appointment booking flow                 │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Service Territories  │ /service-territories  │ 5 regions                                       │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Service Resources    │ /service-resources    │ 6 technicians with efficiency ratings           │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Skills               │ /skills               │ 8 skills with type badges                       │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Service Crews        │ /service-crews        │ 2 crews                                         │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Shifts               │ /shifts               │ 8 shifts                                        │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Time Sheets          │ /time-sheets          │ 6 sheets with approval status                   │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Resource Absences    │ /resource-absences    │ 5 absences                                      │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Field Service Assets │ /field-service-assets │ 6 assets with warranty tracking                 │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Maintenance Plans    │ /maintenance-plans    │ 5 plans                                         │
+  ├──────────────────────┼───────────────────────┼─────────────────────────────────────────────────┤
+  │ Scheduling Policies  │ /scheduling-policies  │ 2 policies                                      │
+  └──────────────────────┴───────────────────────┴─────────────────────────────────────────────────┘
+
+  Sales Cloud (Sales submenu):
+
+  ┌───────────────────────┬────────────────────────┐
+  │         Page          │          URL           │
+  ├───────────────────────┼────────────────────────┤
+  │ Sales Cadences        │ /sales-cadences        │
+  ├───────────────────────┼────────────────────────┤
+  │ Pipeline Inspection   │ /pipeline-inspection   │
+  ├───────────────────────┼────────────────────────┤
+  │ Revenue Intelligence  │ /revenue-intelligence  │
+  ├───────────────────────┼────────────────────────┤
+  │ Conversation Insights │ /conversation-insights │
+  └───────────────────────┴────────────────────────┘
+
+  Service Cloud (Service submenu):
+
+  ┌────────────────┬─────────────────┐
+  │      Page      │       URL       │
+  ├────────────────┼─────────────────┤
+  │ Einstein Bots  │ /einstein-bots  │
+  ├────────────────┼─────────────────┤
+  │ Social Service │ /social-service │
+  ├────────────────┼─────────────────┤
+  │ Messaging      │ /messaging      │
+  └────────────────┴─────────────────┘
+
+  Marketing Cloud (Marketing submenu):
+
+  ┌─────────────────────┬──────────────────────┐
+  │        Page         │         URL          │
+  ├─────────────────────┼──────────────────────┤
+  │ A/B Tests           │ /ab-tests            │
+  ├─────────────────────┼──────────────────────┤
+  │ Landing Pages       │ /landing-pages       │
+  ├─────────────────────┼──────────────────────┤
+  │ Marketing Analytics │ /marketing-analytics │
+  └─────────────────────┴──────────────────────┘
+
+  Platform (Reports/Admin submenus):
+
+  ┌────────────────────┬─────────────────────┐
+  │        Page        │         URL         │
+  ├────────────────────┼─────────────────────┤
+  │ Dynamic Dashboards │ /dynamic-dashboards │
+  ├────────────────────┼─────────────────────┤
+  │ Validation Rules   │ /validation-rules   │
+  └────────────────────┴─────────────────────┘
+
+  Additional (top-level):
+
+  ┌───────────┬────────────┐
+  │   Page    │    URL     │
+  ├───────────┼────────────┤
+  │ Loyalty   │ /loyalty   │
+  ├───────────┼────────────┤
+  │ Maps      │ /maps      │
+  ├───────────┼────────────┤
+  │ Scheduler │ /scheduler │
+  └───────────┴────────────┘
+
+  4. Test CRUD on each page
+
+  Every page supports: Create (+ button), Edit (click row), Delete (trash icon), Export (CSV/PDF), Search, Sort, and Pagination.
+
+  5. Optional: Prisma Studio (visual DB browser)
+
+  npx prisma studio
+  Opens at http://localhost:5555 — you can browse all tables directly.

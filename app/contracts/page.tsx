@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -45,7 +44,17 @@ import CloseIcon from '@mui/icons-material/Close';
 import BusinessIcon from '@mui/icons-material/Business';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Contract {
   id: string;
@@ -65,8 +74,18 @@ interface Contract {
   updatedAt?: string;
 }
 
+const tableColumns: Column[] = [
+  { id: 'name', label: 'Contract' },
+  { id: 'account', label: 'Account', sortable: false },
+  { id: 'startDate', label: 'Start Date' },
+  { id: 'endDate', label: 'End Date' },
+  { id: 'contractTerm', label: 'Term' },
+  { id: 'totalValue', label: 'Value' },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function ContractsPage() {
-  const [contracts, setContracts] = useState<Contract[]>([]);
   const [stats, setStats] = useState({
     totalContracts: 0,
     draftContracts: 0,
@@ -75,12 +94,22 @@ export default function ContractsPage() {
     totalValue: 0,
     expiringThisMonth: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    startDate: '',
+    endDate: '',
+    contractTerm: 12,
+    totalValue: 0,
+    description: '',
+    autoRenewal: false,
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [formData, setFormData] = useState({
     accountId: '',
     name: '',
@@ -92,21 +121,36 @@ export default function ContractsPage() {
     autoRenewal: false,
   });
 
+  const [sortBy, setSortByLocal] = useState('createdAt');
+  const [sortOrder, setSortOrderLocal] = useState<'asc' | 'desc'>('desc');
+
+  const { data: contracts, loading, error, pagination, setPage, setPageSize, setSort, refresh } = usePagination<Contract>({
+    url: '/api/contracts',
+    defaultSortBy: 'createdAt',
+  });
+
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByLocal(col);
+    setSortOrderLocal(newOrder);
+    setSort(col, newOrder);
+  };
+
   useEffect(() => {
-    fetchContracts();
+    fetchStats();
     fetchAccounts();
   }, []);
 
-  const fetchContracts = async () => {
+  const fetchStats = async () => {
     try {
       const response = await fetch('/api/contracts');
       const data = await response.json();
-      setContracts(data.contracts || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching contracts:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -114,7 +158,7 @@ export default function ContractsPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -130,11 +174,16 @@ export default function ContractsPage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchContracts();
+        refresh();
+        fetchStats();
         resetForm();
+        toast.showSuccess('Contract created successfully');
+      } else {
+        toast.showError('Failed to create contract');
       }
     } catch (error) {
       console.error('Error creating contract:', error);
+      toast.showError('Error creating contract');
     }
   };
 
@@ -146,31 +195,86 @@ export default function ContractsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: contractId, action: 'activate' }),
       });
-      fetchContracts();
+      refresh();
+      fetchStats();
+      toast.showSuccess('Contract activated successfully');
     } catch (error) {
       console.error('Error activating contract:', error);
+      toast.showError('Error activating contract');
     }
   };
 
   const handleDeleteContract = async (contractId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!confirm('Are you sure you want to delete this contract?')) return;
+
+    const confirmed = await confirm({
+      title: 'Delete Contract',
+      message: 'Are you sure you want to delete this contract? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/contracts?id=${contractId}`, { method: 'DELETE' });
-      fetchContracts();
+      refresh();
+      fetchStats();
       if (selectedContract?.id === contractId) {
         setDetailDialogOpen(false);
         setSelectedContract(null);
       }
+      toast.showSuccess('Contract deleted successfully');
     } catch (error) {
       console.error('Error deleting contract:', error);
+      toast.showError('Error deleting contract');
     }
   };
 
   const handleRowClick = (contract: Contract) => {
     setSelectedContract(contract);
+    setEditMode(false);
     setDetailDialogOpen(true);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedContract) return;
+    setEditFormData({
+      name: selectedContract.name || '',
+      startDate: selectedContract.startDate ? selectedContract.startDate.split('T')[0] : '',
+      endDate: selectedContract.endDate ? selectedContract.endDate.split('T')[0] : '',
+      contractTerm: selectedContract.contractTerm || 12,
+      totalValue: selectedContract.totalValue || 0,
+      description: selectedContract.description || '',
+      autoRenewal: selectedContract.autoRenewal || false,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedContract) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/contracts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedContract.id, ...editFormData }),
+      });
+      if (response.ok) {
+        refresh();
+        fetchStats();
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        setSelectedContract(null);
+        toast.showSuccess('Contract updated successfully');
+      } else {
+        toast.showError('Failed to update contract');
+      }
+    } catch (error) {
+      console.error('Error updating contract:', error);
+      toast.showError('Error updating contract');
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const resetForm = () => {
@@ -233,18 +337,32 @@ export default function ContractsPage() {
         return true;
       });
 
+  const exportData = filteredContracts.map((c) => ({
+    'Contract Name': c.name,
+    'Contract Number': c.contractNumber,
+    Account: c.account?.name || '-',
+    'Start Date': c.startDate ? formatDate(c.startDate) : '-',
+    'End Date': c.endDate ? formatDate(c.endDate) : '-',
+    Term: `${c.contractTerm} months`,
+    Value: formatCurrency(c.totalValue || 0),
+    Status: c.status,
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Contracts</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Contract
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="contracts" title="Contracts Export" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Contract
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -307,105 +425,110 @@ export default function ContractsPage() {
         </Paper>
 
         {/* Contracts Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Contract</TableCell>
-                <TableCell>Account</TableCell>
-                <TableCell>Start Date</TableCell>
-                <TableCell>End Date</TableCell>
-                <TableCell>Term</TableCell>
-                <TableCell>Value</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredContracts.map((contract) => {
-                const daysRemaining = getDaysRemaining(contract.endDate);
-                return (
-                  <TableRow
-                    key={contract.id}
-                    hover
-                    onClick={() => handleRowClick(contract)}
-                    sx={{ cursor: 'pointer' }}
-                  >
-                    <TableCell>
-                      <Typography variant="body2" fontWeight="bold">
-                        {contract.name}
-                      </Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        {contract.contractNumber}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{contract.account?.name || '-'}</TableCell>
-                    <TableCell>
-                      {contract.startDate ? formatDate(contract.startDate) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Box>
-                        {contract.endDate ? formatDate(contract.endDate) : '-'}
-                        {contract.status === 'ACTIVATED' && daysRemaining <= 30 && daysRemaining > 0 && (
-                          <Typography variant="caption" color="warning.main" display="block">
-                            {daysRemaining} days left
-                          </Typography>
+        {loading ? (
+          <TableSkeleton rows={8} columns={8} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={tableColumns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {filteredContracts.map((contract) => {
+                  const daysRemaining = getDaysRemaining(contract.endDate);
+                  return (
+                    <TableRow
+                      key={contract.id}
+                      hover
+                      onClick={() => handleRowClick(contract)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell>
+                        <Typography variant="body2" fontWeight="bold">
+                          {contract.name}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {contract.contractNumber}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{contract.account?.name || '-'}</TableCell>
+                      <TableCell>
+                        {contract.startDate ? formatDate(contract.startDate) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Box>
+                          {contract.endDate ? formatDate(contract.endDate) : '-'}
+                          {contract.status === 'ACTIVATED' && daysRemaining <= 30 && daysRemaining > 0 && (
+                            <Typography variant="caption" color="warning.main" display="block">
+                              {daysRemaining} days left
+                            </Typography>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{contract.contractTerm} months</TableCell>
+                      <TableCell>{formatCurrency(contract.totalValue || 0)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={contract.status}
+                          color={getStatusColor(contract.status) as any}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {contract.status === 'DRAFT' && (
+                          <>
+                            <Tooltip title="Activate">
+                              <IconButton
+                                size="small"
+                                color="success"
+                                onClick={(e) => handleActivateContract(contract.id, e)}
+                              >
+                                <CheckCircleIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(e) => handleDeleteContract(contract.id, e)}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </>
                         )}
-                      </Box>
-                    </TableCell>
-                    <TableCell>{contract.contractTerm} months</TableCell>
-                    <TableCell>{formatCurrency(contract.totalValue || 0)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={contract.status}
-                        color={getStatusColor(contract.status) as any}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {contract.status === 'DRAFT' && (
-                        <>
-                          <Tooltip title="Activate">
-                            <IconButton
-                              size="small"
-                              color="success"
-                              onClick={(e) => handleActivateContract(contract.id, e)}
-                            >
-                              <CheckCircleIcon />
+                        {contract.status === 'ACTIVATED' && (
+                          <Tooltip title="Renew">
+                            <IconButton size="small" color="primary" onClick={(e) => e.stopPropagation()}>
+                              <AutorenewIcon />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Delete">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={(e) => handleDeleteContract(contract.id, e)}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </>
-                      )}
-                      {contract.status === 'ACTIVATED' && (
-                        <Tooltip title="Renew">
-                          <IconButton size="small" color="primary" onClick={(e) => e.stopPropagation()}>
-                            <AutorenewIcon />
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredContracts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center">
+                      No contracts found
                     </TableCell>
                   </TableRow>
-                );
-              })}
-              {filteredContracts.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No contracts found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Contract Detail Dialog */}
@@ -434,6 +557,7 @@ export default function ContractsPage() {
               </Box>
             </DialogTitle>
             <DialogContent dividers>
+              {selectedContract && !editMode && (
               <Grid container spacing={3}>
                 {/* Status */}
                 <Grid size={{ xs: 12 }}>
@@ -553,35 +677,139 @@ export default function ContractsPage() {
                   </Box>
                 </Grid>
               </Grid>
+              )}
+              {selectedContract && editMode && (
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Contract Name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      fullWidth
+                      label="Start Date"
+                      type="date"
+                      value={editFormData.startDate}
+                      onChange={(e) => setEditFormData({ ...editFormData, startDate: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      fullWidth
+                      label="End Date"
+                      type="date"
+                      value={editFormData.endDate}
+                      onChange={(e) => setEditFormData({ ...editFormData, endDate: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      fullWidth
+                      label="Contract Term (months)"
+                      type="number"
+                      value={editFormData.contractTerm}
+                      onChange={(e) => setEditFormData({ ...editFormData, contractTerm: parseInt(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Total Value"
+                      type="number"
+                      value={editFormData.totalValue}
+                      onChange={(e) => setEditFormData({ ...editFormData, totalValue: parseFloat(e.target.value) || 0 })}
+                      InputProps={{
+                        startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>,
+                      }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={editFormData.autoRenewal}
+                          onChange={(e) => setEditFormData({ ...editFormData, autoRenewal: e.target.checked })}
+                        />
+                      }
+                      label="Auto-Renewal Enabled"
+                      sx={{ mt: 1 }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Description"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      multiline
+                      rows={3}
+                    />
+                  </Grid>
+                </Grid>
+              )}
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
-              {selectedContract.status === 'DRAFT' && (
+              {!editMode && (
+                <>
+                  {selectedContract.status === 'DRAFT' && (
+                    <>
+                      <Button
+                        color="success"
+                        startIcon={<CheckCircleIcon />}
+                        onClick={(e) => {
+                          handleActivateContract(selectedContract.id, e);
+                          setDetailDialogOpen(false);
+                        }}
+                      >
+                        Activate
+                      </Button>
+                      <Button
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={(e) => handleDeleteContract(selectedContract.id, e)}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                  {selectedContract.status === 'ACTIVATED' && (
+                    <Button color="primary" startIcon={<AutorenewIcon />}>
+                      Renew Contract
+                    </Button>
+                  )}
+                  <Button
+                    startIcon={<EditIcon />}
+                    onClick={handleStartEdit}
+                  >
+                    Edit
+                  </Button>
+                  <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
+                </>
+              )}
+              {editMode && (
                 <>
                   <Button
-                    color="success"
-                    startIcon={<CheckCircleIcon />}
-                    onClick={(e) => {
-                      handleActivateContract(selectedContract.id, e);
-                      setDetailDialogOpen(false);
-                    }}
+                    startIcon={<CancelIcon />}
+                    onClick={() => setEditMode(false)}
                   >
-                    Activate
+                    Cancel
                   </Button>
                   <Button
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    onClick={(e) => handleDeleteContract(selectedContract.id, e)}
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveEdit}
+                    disabled={editSaving}
                   >
-                    Delete
+                    {editSaving ? 'Saving...' : 'Save'}
                   </Button>
                 </>
               )}
-              {selectedContract.status === 'ACTIVATED' && (
-                <Button color="primary" startIcon={<AutorenewIcon />}>
-                  Renew Contract
-                </Button>
-              )}
-              <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
             </DialogActions>
           </>
         )}

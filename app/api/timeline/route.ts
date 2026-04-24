@@ -14,22 +14,26 @@ export async function GET(req: NextRequest) {
     const contactId = searchParams.get('contactId');
     const leadId = searchParams.get('leadId');
     const opportunityId = searchParams.get('opportunityId');
+    const globalMode = !contactId && !leadId && !opportunityId;
+    const globalLimit = 50;
 
     const timeline: any[] = [];
 
     // Fetch Notes
+    const noteWhere: any = {};
+    if (contactId) noteWhere.contactId = contactId;
+    if (leadId) noteWhere.leadId = leadId;
+    if (opportunityId) noteWhere.opportunityId = opportunityId;
+
     const notes = await prisma.note.findMany({
-      where: {
-        ...(contactId && { contactId }),
-        ...(leadId && { leadId }),
-        ...(opportunityId && { opportunityId }),
-      },
+      where: noteWhere,
       include: {
         creator: {
           select: { id: true, name: true },
         },
       },
       orderBy: { createdAt: 'desc' },
+      ...(globalMode && { take: globalLimit }),
     });
 
     notes.forEach((note) => {
@@ -44,18 +48,20 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch Tasks
-    if (contactId || opportunityId) {
+    if (contactId || opportunityId || globalMode) {
+      const taskWhere: any = {};
+      if (contactId) taskWhere.contactId = contactId;
+      if (opportunityId) taskWhere.opportunityId = opportunityId;
+
       const tasks = await prisma.task.findMany({
-        where: {
-          ...(contactId && { contactId }),
-          ...(opportunityId && { opportunityId }),
-        },
+        where: taskWhere,
         include: {
           assignee: {
             select: { id: true, name: true },
           },
         },
         orderBy: { createdAt: 'desc' },
+        ...(globalMode && { take: globalLimit }),
       });
 
       tasks.forEach((task) => {
@@ -71,18 +77,20 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch Events
-    if (contactId || opportunityId) {
+    if (contactId || opportunityId || globalMode) {
+      const eventWhere: any = {};
+      if (contactId) eventWhere.contactId = contactId;
+      if (opportunityId) eventWhere.opportunityId = opportunityId;
+
       const events = await prisma.event.findMany({
-        where: {
-          ...(contactId && { contactId }),
-          ...(opportunityId && { opportunityId }),
-        },
+        where: eventWhere,
         include: {
           owner: {
             select: { id: true, name: true },
           },
         },
         orderBy: { createdAt: 'desc' },
+        ...(globalMode && { take: globalLimit }),
       });
 
       events.forEach((event) => {
@@ -98,18 +106,20 @@ export async function GET(req: NextRequest) {
     }
 
     // Fetch Attachments
+    const attachmentWhere: any = {};
+    if (contactId) attachmentWhere.contactId = contactId;
+    if (leadId) attachmentWhere.leadId = leadId;
+    if (opportunityId) attachmentWhere.opportunityId = opportunityId;
+
     const attachments = await prisma.attachment.findMany({
-      where: {
-        ...(contactId && { contactId }),
-        ...(leadId && { leadId }),
-        ...(opportunityId && { opportunityId }),
-      },
+      where: attachmentWhere,
       include: {
         uploader: {
           select: { id: true, name: true },
         },
       },
       orderBy: { createdAt: 'desc' },
+      ...(globalMode && { take: globalLimit }),
     });
 
     attachments.forEach((attachment) => {
@@ -124,15 +134,19 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch Lead Activities
-    if (leadId) {
+    if (leadId || globalMode) {
+      const leadActivityWhere: any = {};
+      if (leadId) leadActivityWhere.leadId = leadId;
+
       const leadActivities = await prisma.leadActivity.findMany({
-        where: { leadId },
+        where: leadActivityWhere,
         include: {
           user: {
             select: { id: true, name: true },
           },
         },
         orderBy: { timestamp: 'desc' },
+        ...(globalMode && { take: globalLimit }),
       });
 
       leadActivities.forEach((activity) => {
@@ -147,19 +161,20 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Fetch Emails (only for contacts, not leads)
-    if (contactId) {
+    // Fetch Emails
+    if (contactId || globalMode) {
+      const emailWhere: any = {};
+      if (contactId) emailWhere.contactId = contactId;
+
       const emails = await prisma.email.findMany({
-        where: {
-          contactId: contactId,
-        },
+        where: emailWhere,
         include: {
           sender: {
             select: { id: true, name: true },
           },
         },
         orderBy: { sentAt: 'desc' },
-        take: 50,
+        take: globalMode ? globalLimit : 50,
       });
 
       emails.forEach((email) => {
@@ -176,10 +191,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Sort by timestamp descending
+    // Sort by timestamp descending and limit for global mode
     timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    return NextResponse.json(timeline);
+    return NextResponse.json(globalMode ? timeline.slice(0, globalLimit) : timeline);
   } catch (error: any) {
     console.error('Error fetching timeline:', error);
     return NextResponse.json(

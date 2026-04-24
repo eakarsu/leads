@@ -75,7 +75,7 @@ export default function AttachmentsSection({
       const response = await fetch(`/api/attachments?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch attachments');
       const data = await response.json();
-      setAttachments(data);
+      setAttachments(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       setError(err.message);
     } finally {

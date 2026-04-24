@@ -98,7 +98,7 @@ export default function EmailSection({
       const response = await fetch(`/api/emails?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch emails');
       const data = await response.json();
-      setEmails(data);
+      setEmails(Array.isArray(data) ? data : data.data || []);
       setError(null);
     } catch (err: any) {
       console.error('Error fetching emails:', err);

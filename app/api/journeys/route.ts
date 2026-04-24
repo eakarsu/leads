@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const paginationParams = parsePaginationParams(req);
+
+    const total = await prisma.journey.count();
+
     const journeys = await prisma.journey.findMany({
       include: {
         _count: {
           select: { steps: true, enrollments: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     const stats = {
@@ -20,7 +25,7 @@ export async function GET() {
       totalConversions: journeys.reduce((sum, j) => sum + j.totalConverted, 0),
     };
 
-    return NextResponse.json({ journeys, stats });
+    return NextResponse.json(buildPaginatedResponse(journeys, total, paginationParams, { stats }));
   } catch (error) {
     console.error('Error fetching journeys:', error);
     return NextResponse.json({ error: 'Failed to fetch journeys' }, { status: 500 });

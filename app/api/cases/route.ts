@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
@@ -22,9 +25,11 @@ export async function GET(req: NextRequest) {
     if (queueId) where.queueId = queueId;
     if (ownerId) where.ownerId = ownerId;
 
+    const total = await prisma.case.count({ where });
+
     const cases = await prisma.case.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for cases
@@ -43,7 +48,7 @@ export async function GET(req: NextRequest) {
 
     // Calculate stats
     const stats = {
-      totalCases: casesWithRelations.length,
+      totalCases: total,
       newCases: casesWithRelations.filter(c => c.status === 'NEW').length,
       openCases: casesWithRelations.filter(c => c.status === 'OPEN').length,
       inProgressCases: casesWithRelations.filter(c => c.status === 'IN_PROGRESS').length,
@@ -51,7 +56,8 @@ export async function GET(req: NextRequest) {
       closedCases: casesWithRelations.filter(c => c.status === 'CLOSED').length,
     };
 
-    return NextResponse.json({ cases: casesWithRelations, stats });
+    const paginatedResponse = buildPaginatedResponse(casesWithRelations, total, paginationParams);
+    return NextResponse.json({ ...paginatedResponse, stats });
   } catch (error: any) {
     console.error('Error fetching cases:', error);
     return NextResponse.json({ error: 'Failed to fetch cases' }, { status: 500 });

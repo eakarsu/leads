@@ -125,6 +125,8 @@ export default function DataImportPage() {
         setStats(data.stats);
       } else if (Array.isArray(data)) {
         setImports(data);
+      } else if (data.data) {
+        setImports(data.data);
       }
     } catch (error) {
       console.error('Error fetching imports:', error);

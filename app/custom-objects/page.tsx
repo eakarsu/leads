@@ -47,7 +47,11 @@ import {
   Delete as DeleteIcon,
   Edit as EditIcon,
   Code as ApiIcon,
+  Save as SaveIcon,
+  Close as CancelIcon,
 } from '@mui/icons-material';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
+import { useToast } from '@/components/ToastProvider';
 
 interface CustomObject {
   id: string;
@@ -126,6 +130,18 @@ export default function CustomObjectsPage() {
   });
 
   const [recordFormData, setRecordFormData] = useState<Record<string, any>>({});
+  const [selectedRecord, setSelectedRecord] = useState<CustomRecord | null>(null);
+  const [recordDetailOpen, setRecordDetailOpen] = useState(false);
+  const [recordEditMode, setRecordEditMode] = useState(false);
+  const [recordEditFormData, setRecordEditFormData] = useState<Record<string, any>>({});
+  const [recordEditSaving, setRecordEditSaving] = useState(false);
+  const [objectDetailOpen, setObjectDetailOpen] = useState(false);
+  const [objectEditMode, setObjectEditMode] = useState(false);
+  const [objectEditFormData, setObjectEditFormData] = useState({ label: '', pluralLabel: '', description: '' });
+  const [objectEditSaving, setObjectEditSaving] = useState(false);
+
+  const { confirm } = useConfirmDialog();
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     fetchObjects();
@@ -143,12 +159,9 @@ export default function CustomObjectsPage() {
       const res = await fetch('/api/custom-objects?includeFields=true');
       const data = await res.json();
 
-      if (data.objects) {
-        setObjects(data.objects);
-        setStats(data.stats);
-      } else if (Array.isArray(data)) {
-        setObjects(data);
-      }
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setObjects(arr);
+      if (data.stats) setStats(data.stats);
     } catch (error) {
       console.error('Error fetching objects:', error);
     } finally {
@@ -161,7 +174,7 @@ export default function CustomObjectsPage() {
       setLoadingRecords(true);
       const res = await fetch(`/api/custom-objects/${objectId}/records`);
       const data = await res.json();
-      setRecords(data.records || []);
+      setRecords(Array.isArray(data) ? data : data.data || data.records || []);
     } catch (error) {
       console.error('Error fetching records:', error);
       setRecords([]);
@@ -251,6 +264,120 @@ export default function CustomObjectsPage() {
       ...objectFormData,
       fields: objectFormData.fields.filter((_, i) => i !== index),
     });
+  };
+
+  // Record detail handlers
+  const handleRecordRowClick = (record: CustomRecord) => {
+    setSelectedRecord(record);
+    setRecordEditMode(false);
+    setRecordDetailOpen(true);
+  };
+
+  const handleStartRecordEdit = () => {
+    if (!selectedRecord) return;
+    setRecordEditFormData({ Name: selectedRecord.name, ...selectedRecord.data });
+    setRecordEditMode(true);
+  };
+
+  const handleSaveRecordEdit = async () => {
+    if (!selectedRecord || !selectedObject) return;
+    setRecordEditSaving(true);
+    try {
+      const { Name, ...data } = recordEditFormData;
+      const res = await fetch(`/api/custom-objects/${selectedObject.id}/records`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: selectedRecord.id, name: Name, data }),
+      });
+      if (!res.ok) throw new Error('Failed to update record');
+      showSuccess('Record updated successfully');
+      setRecordEditMode(false);
+      setRecordDetailOpen(false);
+      fetchRecords(selectedObject.id);
+    } catch (err: any) {
+      showError(err.message);
+    } finally {
+      setRecordEditSaving(false);
+    }
+  };
+
+  const handleDeleteRecord = async (id: string) => {
+    if (!selectedObject) return;
+    const confirmed = await confirm({
+      title: 'Delete Record',
+      message: 'Are you sure you want to delete this record?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`/api/custom-objects/${selectedObject.id}/records?recordId=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete record');
+      showSuccess('Record deleted successfully');
+      setRecordDetailOpen(false);
+      setSelectedRecord(null);
+      fetchRecords(selectedObject.id);
+    } catch (err: any) {
+      showError(err.message);
+    }
+  };
+
+  // Object detail handlers
+  const handleObjectDetailClick = (obj: CustomObject) => {
+    setSelectedObject(obj);
+    setObjectEditMode(false);
+    setObjectDetailOpen(true);
+  };
+
+  const handleStartObjectEdit = () => {
+    if (!selectedObject) return;
+    setObjectEditFormData({
+      label: selectedObject.label || '',
+      pluralLabel: selectedObject.pluralLabel || '',
+      description: selectedObject.description || '',
+    });
+    setObjectEditMode(true);
+  };
+
+  const handleSaveObjectEdit = async () => {
+    if (!selectedObject) return;
+    setObjectEditSaving(true);
+    try {
+      const res = await fetch('/api/custom-objects', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedObject.id, ...objectEditFormData }),
+      });
+      if (!res.ok) throw new Error('Failed to update object');
+      showSuccess('Object updated successfully');
+      setObjectEditMode(false);
+      setObjectDetailOpen(false);
+      fetchObjects();
+    } catch (err: any) {
+      showError(err.message);
+    } finally {
+      setObjectEditSaving(false);
+    }
+  };
+
+  const handleDeleteObject = async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Custom Object',
+      message: 'Are you sure you want to delete this custom object and all its records?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`/api/custom-objects?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete object');
+      showSuccess('Object deleted successfully');
+      setObjectDetailOpen(false);
+      setSelectedObject(null);
+      fetchObjects();
+    } catch (err: any) {
+      showError(err.message);
+    }
   };
 
   const getFieldTypeColor = (type: string): 'primary' | 'secondary' | 'success' | 'warning' | 'info' | 'default' => {
@@ -514,13 +641,18 @@ export default function CustomObjectsPage() {
                       <ListItemText
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography fontWeight="medium">{obj.label}</Typography>
+                            <Typography fontWeight="medium" sx={{ flex: 1 }}>{obj.label}</Typography>
                             <Chip
                               label={obj.isActive ? 'Active' : 'Inactive'}
                               size="small"
                               color={obj.isActive ? 'success' : 'default'}
                               variant="outlined"
                             />
+                            <Tooltip title="Object Details">
+                              <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleObjectDetailClick(obj); }}>
+                                <ViewIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           </Box>
                         }
                         secondary={
@@ -624,7 +756,7 @@ export default function CustomObjectsPage() {
                         </TableHead>
                         <TableBody>
                           {records.map((record) => (
-                            <TableRow key={record.id} hover>
+                            <TableRow key={record.id} hover sx={{ cursor: 'pointer' }} onClick={() => handleRecordRowClick(record)}>
                               <TableCell>
                                 <Typography fontWeight="medium">{record.name}</Typography>
                               </TableCell>
@@ -863,6 +995,144 @@ export default function CustomObjectsPage() {
               </DialogActions>
             </>
           )}
+        </Dialog>
+        {/* Record Detail Dialog */}
+        <Dialog open={recordDetailOpen} onClose={() => { setRecordDetailOpen(false); setRecordEditMode(false); }} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {recordEditMode ? 'Edit Record' : 'Record Details'}
+          </DialogTitle>
+          <DialogContent dividers>
+            {selectedRecord && !recordEditMode && (
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Name</Typography>
+                <Typography gutterBottom>{selectedRecord.name}</Typography>
+                {selectedObject?.fields?.map((field) => (
+                  <Box key={field.id}>
+                    <Typography variant="subtitle2" color="text.secondary">{field.label}</Typography>
+                    <Typography gutterBottom>{String(selectedRecord.data[field.name] ?? 'N/A')}</Typography>
+                  </Box>
+                ))}
+                <Typography variant="subtitle2" color="text.secondary">Owner</Typography>
+                <Typography gutterBottom>{selectedRecord.owner?.name || 'N/A'}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Created</Typography>
+                <Typography>{new Date(selectedRecord.createdAt).toLocaleString()}</Typography>
+              </Box>
+            )}
+            {selectedRecord && recordEditMode && (
+              <Box>
+                <TextField
+                  label="Record Name"
+                  value={recordEditFormData.Name || ''}
+                  onChange={(e) => setRecordEditFormData({ ...recordEditFormData, Name: e.target.value })}
+                  fullWidth
+                  margin="normal"
+                />
+                {selectedObject?.fields?.map((field) => (
+                  <Box key={field.id} sx={{ mt: 2 }}>
+                    <Typography variant="body2" fontWeight="medium" gutterBottom>
+                      {field.label}
+                      {field.required && <span style={{ color: 'red' }}> *</span>}
+                    </Typography>
+                    {renderFieldInput(
+                      field,
+                      recordEditFormData[field.name],
+                      (value) => setRecordEditFormData({ ...recordEditFormData, [field.name]: value })
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {!recordEditMode ? (
+              <>
+                <Button onClick={() => { setRecordDetailOpen(false); setRecordEditMode(false); }}>Close</Button>
+                <Button startIcon={<EditIcon />} onClick={handleStartRecordEdit}>Edit</Button>
+                <Button startIcon={<DeleteIcon />} color="error" onClick={() => selectedRecord && handleDeleteRecord(selectedRecord.id)}>Delete</Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={() => setRecordEditMode(false)} startIcon={<CancelIcon />}>Cancel</Button>
+                <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveRecordEdit} disabled={recordEditSaving}>
+                  {recordEditSaving ? 'Saving...' : 'Save'}
+                </Button>
+              </>
+            )}
+          </DialogActions>
+        </Dialog>
+
+        {/* Object Detail Dialog */}
+        <Dialog open={objectDetailOpen} onClose={() => { setObjectDetailOpen(false); setObjectEditMode(false); }} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            {objectEditMode ? 'Edit Custom Object' : 'Custom Object Details'}
+          </DialogTitle>
+          <DialogContent dividers>
+            {selectedObject && !objectEditMode && (
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Label</Typography>
+                <Typography gutterBottom>{selectedObject.label}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Plural Label</Typography>
+                <Typography gutterBottom>{selectedObject.pluralLabel}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">API Name</Typography>
+                <Typography gutterBottom sx={{ fontFamily: 'monospace' }}>{selectedObject.name}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Description</Typography>
+                <Typography gutterBottom>{selectedObject.description || 'N/A'}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Status</Typography>
+                <Box sx={{ mb: 1 }}>
+                  <Chip label={selectedObject.isActive ? 'Active' : 'Inactive'} size="small" color={selectedObject.isActive ? 'success' : 'default'} />
+                </Box>
+                <Typography variant="subtitle2" color="text.secondary">Fields</Typography>
+                <Typography gutterBottom>{selectedObject._count?.fields || (selectedObject.fields ? selectedObject.fields.length : 0)}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Records</Typography>
+                <Typography gutterBottom>{selectedObject._count?.records || 0}</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Created</Typography>
+                <Typography>{new Date(selectedObject.createdAt).toLocaleString()}</Typography>
+              </Box>
+            )}
+            {selectedObject && objectEditMode && (
+              <Box>
+                <TextField
+                  label="Label"
+                  value={objectEditFormData.label}
+                  onChange={(e) => setObjectEditFormData({ ...objectEditFormData, label: e.target.value })}
+                  fullWidth
+                  margin="normal"
+                />
+                <TextField
+                  label="Plural Label"
+                  value={objectEditFormData.pluralLabel}
+                  onChange={(e) => setObjectEditFormData({ ...objectEditFormData, pluralLabel: e.target.value })}
+                  fullWidth
+                  margin="normal"
+                />
+                <TextField
+                  label="Description"
+                  value={objectEditFormData.description}
+                  onChange={(e) => setObjectEditFormData({ ...objectEditFormData, description: e.target.value })}
+                  fullWidth
+                  margin="normal"
+                  multiline
+                  rows={3}
+                />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {!objectEditMode ? (
+              <>
+                <Button onClick={() => { setObjectDetailOpen(false); setObjectEditMode(false); }}>Close</Button>
+                <Button startIcon={<EditIcon />} onClick={handleStartObjectEdit}>Edit</Button>
+                <Button startIcon={<DeleteIcon />} color="error" onClick={() => selectedObject && handleDeleteObject(selectedObject.id)}>Delete</Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={() => setObjectEditMode(false)} startIcon={<CancelIcon />}>Cancel</Button>
+                <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveObjectEdit} disabled={objectEditSaving}>
+                  {objectEditSaving ? 'Saving...' : 'Save'}
+                </Button>
+              </>
+            )}
+          </DialogActions>
         </Dialog>
       </Box>
     </DashboardLayout>

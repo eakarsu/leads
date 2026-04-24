@@ -43,6 +43,7 @@ import {
   GridOn as MatrixIcon,
 } from '@mui/icons-material';
 import DashboardLayout from '@/components/DashboardLayout';
+import { FIELD_MAPPINGS, type FieldMapping } from '@/lib/reportFieldMapping';
 
 const OBJECT_TYPES = [
   { value: 'Lead', label: 'Leads', icon: '👤' },
@@ -58,18 +59,16 @@ const OBJECT_TYPES = [
   { value: 'Invoice', label: 'Invoices', icon: '🧾' },
 ];
 
-const FIELD_OPTIONS: Record<string, string[]> = {
-  Lead: ['Full Name', 'Email', 'Phone', 'Company', 'Status', 'Lead Source', 'Created Date', 'Owner'],
-  Contact: ['First Name', 'Last Name', 'Email', 'Phone', 'Title', 'Account', 'Created Date', 'Owner'],
-  Account: ['Name', 'Industry', 'Type', 'Website', 'Phone', 'Created Date', 'Owner'],
-  Opportunity: ['Name', 'Stage', 'Amount', 'Probability', 'Close Date', 'Account', 'Created Date', 'Owner'],
-  Case: ['Case Number', 'Subject', 'Status', 'Priority', 'Origin', 'Contact', 'Account', 'Created Date', 'Owner'],
-  Campaign: ['Name', 'Status', 'Type', 'Start Date', 'End Date', 'Expected Revenue', 'Actual Cost'],
-  Task: ['Subject', 'Status', 'Priority', 'Due Date', 'Related To', 'Assigned To', 'Created Date'],
-  Contract: ['Contract Number', 'Account', 'Status', 'Start Date', 'End Date', 'Value'],
-  Quote: ['Quote Number', 'Name', 'Account', 'Status', 'Total Price', 'Expiration Date'],
-  Order: ['Order Number', 'Account', 'Status', 'Order Date', 'Total Amount'],
-  Invoice: ['Invoice Number', 'Account', 'Status', 'Invoice Date', 'Due Date', 'Total Amount'],
+// Use FIELD_MAPPINGS for field options
+const getFieldOptions = (objectType: string): FieldMapping[] => FIELD_MAPPINGS[objectType] || [];
+const getFieldLabels = (objectType: string): string[] => getFieldOptions(objectType).map((f) => f.label);
+const getDbField = (objectType: string, label: string): string => {
+  const mapping = getFieldOptions(objectType).find((f) => f.label === label);
+  return mapping?.dbField || label;
+};
+const getLabelFromDb = (objectType: string, dbField: string): string => {
+  const mapping = getFieldOptions(objectType).find((f) => f.dbField === dbField);
+  return mapping?.label || dbField;
 };
 
 const OPERATORS = [
@@ -124,11 +123,13 @@ export default function CreateReportPage() {
 
   const addFilter = () => {
     if (!formData.objectType) return;
+    const labels = getFieldLabels(formData.objectType);
+    if (labels.length === 0) return;
     setFormData({
       ...formData,
       filters: [
         ...formData.filters,
-        { field: FIELD_OPTIONS[formData.objectType][0], operator: 'equals', value: '' },
+        { field: labels[0], operator: 'equals', value: '' },
       ],
     });
   };
@@ -156,6 +157,14 @@ export default function CreateReportPage() {
     setError('');
 
     try {
+      // Convert labels to dbField names for storage
+      const dbColumns = formData.columns.map((label) => getDbField(formData.objectType, label));
+      const dbFilters = formData.filters.map((f) => ({
+        ...f,
+        field: getDbField(formData.objectType, f.field),
+      }));
+      const dbGroupings = formData.groupings.map((label) => getDbField(formData.objectType, label));
+
       const response = await fetch('/api/reports/builder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,9 +173,9 @@ export default function CreateReportPage() {
           description: formData.description,
           reportType: formData.reportType,
           objectType: formData.objectType,
-          columns: formData.columns,
-          filters: formData.filters,
-          groupings: formData.groupings,
+          columns: dbColumns,
+          filters: dbFilters,
+          groupings: dbGroupings,
           isPublic: formData.isPublic,
         }),
       });
@@ -191,21 +200,42 @@ export default function CreateReportPage() {
     setError('');
 
     try {
+      // Convert labels to dbField names for API
+      const dbColumns = formData.columns.map((label) => getDbField(formData.objectType, label));
+      const dbFilters = formData.filters.map((f) => ({
+        ...f,
+        field: getDbField(formData.objectType, f.field),
+      }));
+      const dbGroupings = formData.groupings.map((label) => getDbField(formData.objectType, label));
+
       const response = await fetch('/api/reports/builder/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           objectType: formData.objectType,
-          columns: formData.columns,
-          filters: formData.filters,
-          groupings: formData.groupings,
+          columns: dbColumns,
+          filters: dbFilters,
+          groupings: dbGroupings,
         }),
       });
 
       if (!response.ok) throw new Error('Failed to run report');
 
       const data = await response.json();
-      setReportResult(data);
+      // Map results so keys use labels for display
+      const mappedResults = (data.results || data.data || []).map((row: any) => {
+        const mapped: any = {};
+        formData.columns.forEach((label) => {
+          const dbField = getDbField(formData.objectType, label);
+          mapped[label] = row[dbField] ?? row[label] ?? '-';
+        });
+        return mapped;
+      });
+      setReportResult({
+        data: mappedResults,
+        total: data.count ?? mappedResults.length,
+        columns: formData.columns,
+      });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -360,7 +390,7 @@ export default function CreateReportPage() {
                     {formData.objectType ? (
                       <Paper variant="outlined" sx={{ p: 2, maxHeight: 400, overflow: 'auto' }}>
                         <Grid container spacing={1}>
-                          {FIELD_OPTIONS[formData.objectType]?.map((field) => (
+                          {getFieldLabels(formData.objectType)?.map((field) => (
                             <Grid size={{ xs: 6 }} key={field}>
                               <FormControlLabel
                                 control={
@@ -444,7 +474,7 @@ export default function CreateReportPage() {
                                     onChange={(e) => updateFilter(index, 'field', e.target.value)}
                                     label="Field"
                                   >
-                                    {FIELD_OPTIONS[formData.objectType]?.map((field) => (
+                                    {getFieldLabels(formData.objectType)?.map((field) => (
                                       <MenuItem key={field} value={field}>
                                         {field}
                                       </MenuItem>
@@ -515,7 +545,7 @@ export default function CreateReportPage() {
                               </Box>
                             )}
                           >
-                            {FIELD_OPTIONS[formData.objectType]?.map((field) => (
+                            {getFieldLabels(formData.objectType)?.map((field) => (
                               <MenuItem key={field} value={field}>
                                 {field}
                               </MenuItem>

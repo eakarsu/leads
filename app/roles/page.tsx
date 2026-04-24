@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -48,6 +47,13 @@ import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Role {
   id: string;
@@ -78,7 +84,24 @@ interface RoleAssignment {
   role: { id: string; name: string };
 }
 
+const permissionSetColumns: Column[] = [
+  { id: 'name', label: 'Name' },
+  { id: 'description', label: 'Description', sortable: false },
+  { id: 'assignments', label: 'Assignments', sortable: false },
+  { id: 'isActive', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
+const assignmentColumns: Column[] = [
+  { id: 'userName', label: 'User' },
+  { id: 'email', label: 'Email' },
+  { id: 'role', label: 'Role', sortable: false },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function RolesPage() {
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissionSets, setPermissionSets] = useState<PermissionSet[]>([]);
   const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
@@ -94,9 +117,14 @@ export default function RolesPage() {
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [permissionDialogOpen, setPermissionDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedPermissionSet, setSelectedPermissionSet] = useState<PermissionSet | null>(null);
   const [assignType, setAssignType] = useState<'role' | 'permission'>('role');
   const [users, setUsers] = useState<any[]>([]);
   const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>({});
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [roleFormData, setRoleFormData] = useState({
     name: '',
     description: '',
@@ -119,6 +147,13 @@ export default function RolesPage() {
     userId: '',
     roleId: '',
     permissionSetId: '',
+  });
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    label: '',
+    description: '',
+    parentRoleId: '',
   });
 
   useEffect(() => {
@@ -171,6 +206,12 @@ export default function RolesPage() {
     }
   };
 
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+  };
+
   const handleCreateRole = async () => {
     try {
       const response = await fetch('/api/roles', {
@@ -184,11 +225,12 @@ export default function RolesPage() {
 
       if (response.ok) {
         setRoleDialogOpen(false);
+        toast.showSuccess('Role created successfully');
         fetchRoles();
         setRoleFormData({ name: '', description: '', parentRoleId: '' });
       }
     } catch (error) {
-      console.error('Error creating role:', error);
+      toast.showError('Error creating role');
     }
   };
 
@@ -202,6 +244,7 @@ export default function RolesPage() {
 
       if (response.ok) {
         setPermissionDialogOpen(false);
+        toast.showSuccess('Permission set created successfully');
         fetchPermissions();
         setPermissionFormData({
           name: '',
@@ -218,7 +261,7 @@ export default function RolesPage() {
         });
       }
     } catch (error) {
-      console.error('Error creating permission set:', error);
+      toast.showError('Error creating permission set');
     }
   };
 
@@ -238,6 +281,7 @@ export default function RolesPage() {
 
       if (response.ok) {
         setAssignDialogOpen(false);
+        toast.showSuccess(`${assignType === 'role' ? 'Role' : 'Permission set'} assigned successfully`);
         if (assignType === 'role') {
           fetchRoles();
         } else {
@@ -246,43 +290,106 @@ export default function RolesPage() {
         setAssignFormData({ userId: '', roleId: '', permissionSetId: '' });
       }
     } catch (error) {
-      console.error('Error assigning:', error);
+      toast.showError('Error assigning');
     }
   };
 
   const handleDeleteRole = async (roleId: string) => {
-    if (!confirm('Are you sure you want to delete this role?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Role',
+      message: 'Are you sure you want to delete this role? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/roles?id=${roleId}`, { method: 'DELETE' });
+      toast.showSuccess('Role deleted successfully');
       fetchRoles();
     } catch (error) {
-      console.error('Error deleting role:', error);
+      toast.showError('Error deleting role');
     }
   };
 
   const handleDeletePermissionSet = async (permissionSetId: string) => {
-    if (!confirm('Are you sure you want to delete this permission set?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Permission Set',
+      message: 'Are you sure you want to delete this permission set? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/permissions?id=${permissionSetId}`, { method: 'DELETE' });
+      toast.showSuccess('Permission set deleted successfully');
       fetchPermissions();
     } catch (error) {
-      console.error('Error deleting permission set:', error);
+      toast.showError('Error deleting permission set');
     }
   };
 
   const handleDeleteAssignment = async (assignmentId: string, type: 'role' | 'permission') => {
+    const confirmed = await confirm({
+      title: 'Remove Assignment',
+      message: 'Are you sure you want to remove this assignment?',
+      severity: 'warning',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+
     try {
       const endpoint = type === 'role' ? '/api/roles' : '/api/permissions';
       await fetch(`${endpoint}?id=${assignmentId}&type=assignment`, { method: 'DELETE' });
+      toast.showSuccess('Assignment removed successfully');
       if (type === 'role') {
         fetchRoles();
       } else {
         fetchPermissions();
       }
     } catch (error) {
-      console.error('Error deleting assignment:', error);
+      toast.showError('Error removing assignment');
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedRole) return;
+    setEditFormData({
+      name: selectedRole.name,
+      label: selectedRole.label || '',
+      description: selectedRole.description || '',
+      parentRoleId: selectedRole.parentRoleId || '',
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedRole) return;
+    try {
+      const response = await fetch(`/api/roles/${selectedRole.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editFormData.name,
+          label: editFormData.label,
+          description: editFormData.description || null,
+          parentRoleId: editFormData.parentRoleId || null,
+        }),
+      });
+
+      if (response.ok) {
+        toast.showSuccess('Role updated successfully');
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        setSelectedRole(null);
+        fetchRoles();
+      } else {
+        const data = await response.json();
+        toast.showError(data.error || 'Error updating role');
+      }
+    } catch (error) {
+      toast.showError('Error updating role');
     }
   };
 
@@ -308,10 +415,20 @@ export default function RolesPage() {
     return filteredRoles.map((role) => (
       <Box key={role.id}>
         <ListItem
-          sx={{ pl: level * 4 }}
+          sx={{ pl: level * 4, cursor: 'pointer' }}
+          onClick={() => {
+            setSelectedRole(role);
+            setDetailDialogOpen(true);
+          }}
           secondaryAction={
             <Tooltip title="Delete">
-              <IconButton size="small" onClick={() => handleDeleteRole(role.id)}>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteRole(role.id);
+                }}
+              >
                 <DeleteIcon />
               </IconButton>
             </Tooltip>
@@ -319,7 +436,13 @@ export default function RolesPage() {
         >
           <ListItemIcon>
             {role._count.childRoles > 0 ? (
-              <IconButton size="small" onClick={() => toggleRoleExpand(role.id)}>
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleRoleExpand(role.id);
+                }}
+              >
                 {expandedRoles[role.id] ? <ExpandLess /> : <ExpandMore />}
               </IconButton>
             ) : (
@@ -340,11 +463,32 @@ export default function RolesPage() {
     ));
   };
 
+  const assignmentExportData = assignments.map((a) => ({
+    User: a.user.name,
+    Email: a.user.email,
+    Role: a.role.name,
+  }));
+
+  const permissionSetExportData = permissionSets.map((ps) => ({
+    Name: ps.name,
+    Description: ps.description || '-',
+    Assignments: `${ps._count.assignments} users`,
+    Status: ps.isActive ? 'Active' : 'Inactive',
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Roles & Permissions</Typography>
+          <Box display="flex" gap={2} alignItems="center">
+            {tabValue === 1 && (
+              <ExportToolbar data={permissionSetExportData} filename="permission-sets" title="Permission Sets" />
+            )}
+            {tabValue === 2 && (
+              <ExportToolbar data={assignmentExportData} filename="role-assignments" title="Role Assignments" />
+            )}
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -416,14 +560,20 @@ export default function RolesPage() {
                 New Role
               </Button>
             </Box>
-            <List>
-              {renderRoleHierarchy()}
-              {roles.length === 0 && (
-                <ListItem>
-                  <ListItemText secondary="No roles found. Create your first role." />
-                </ListItem>
-              )}
-            </List>
+            {loading ? (
+              <Box sx={{ p: 2 }}>
+                <TableSkeleton rows={5} columns={3} />
+              </Box>
+            ) : (
+              <List>
+                {renderRoleHierarchy()}
+                {roles.length === 0 && (
+                  <ListItem>
+                    <ListItemText secondary="No roles found. Create your first role." />
+                  </ListItem>
+                )}
+              </List>
+            )}
           </Paper>
         )}
 
@@ -439,56 +589,65 @@ export default function RolesPage() {
                 New Permission Set
               </Button>
             </Box>
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Description</TableCell>
-                    <TableCell>Assignments</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {permissionSets.map((ps) => (
-                    <TableRow key={ps.id}>
-                      <TableCell>
-                        <Typography variant="body2" fontWeight="bold">
-                          {ps.name}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>{ps.description || '-'}</TableCell>
-                      <TableCell>{ps._count.assignments} users</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={ps.isActive ? 'Active' : 'Inactive'}
-                          color={ps.isActive ? 'success' : 'default'}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip title="Delete">
-                          <IconButton
+            {loading ? (
+              <TableSkeleton rows={5} columns={5} />
+            ) : (
+              <TableContainer>
+                <Table>
+                  <SortableTableHead
+                    columns={permissionSetColumns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {permissionSets.map((ps) => (
+                      <TableRow
+                        key={ps.id}
+                        hover
+                        sx={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setSelectedPermissionSet(ps);
+                          setDetailDialogOpen(true);
+                        }}
+                      >
+                        <TableCell>
+                          <Typography variant="body2" fontWeight="bold">
+                            {ps.name}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{ps.description || '-'}</TableCell>
+                        <TableCell>{ps._count.assignments} users</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={ps.isActive ? 'Active' : 'Inactive'}
+                            color={ps.isActive ? 'success' : 'default'}
                             size="small"
-                            onClick={() => handleDeletePermissionSet(ps.id)}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {permissionSets.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} align="center">
-                        No permission sets found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                          />
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeletePermissionSet(ps.id)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {permissionSets.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center">
+                          No permission sets found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
           </Paper>
         )}
 
@@ -517,49 +676,188 @@ export default function RolesPage() {
                 Assign Role
               </Button>
             </Box>
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>User</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell>Role</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {assignments.map((assignment) => (
-                    <TableRow key={assignment.id}>
-                      <TableCell>{assignment.user.name}</TableCell>
-                      <TableCell>{assignment.user.email}</TableCell>
-                      <TableCell>
-                        <Chip label={assignment.role.name} size="small" />
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip title="Remove Assignment">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDeleteAssignment(assignment.id, 'role')}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {assignments.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} align="center">
-                        No role assignments found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            {loading ? (
+              <TableSkeleton rows={5} columns={4} />
+            ) : (
+              <TableContainer>
+                <Table>
+                  <SortableTableHead
+                    columns={assignmentColumns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {assignments.map((assignment) => (
+                      <TableRow key={assignment.id} hover>
+                        <TableCell>{assignment.user.name}</TableCell>
+                        <TableCell>{assignment.user.email}</TableCell>
+                        <TableCell>
+                          <Chip label={assignment.role.name} size="small" />
+                        </TableCell>
+                        <TableCell>
+                          <Tooltip title="Remove Assignment">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteAssignment(assignment.id, 'role')}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {assignments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} align="center">
+                          No role assignments found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
           </Paper>
         )}
       </Box>
+
+      {/* Role Detail Dialog */}
+      <Dialog open={detailDialogOpen && !!selectedRole} onClose={() => { setDetailDialogOpen(false); setSelectedRole(null); setEditMode(false); }} maxWidth="sm" fullWidth>
+        <DialogTitle>{editMode ? 'Edit Role' : 'Role Details'}</DialogTitle>
+        <DialogContent>
+          {selectedRole && !editMode && (
+            <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Name</Typography>
+                <Typography>{selectedRole.label || selectedRole.name}</Typography>
+              </Box>
+              {selectedRole.description && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Description</Typography>
+                  <Typography>{selectedRole.description}</Typography>
+                </Box>
+              )}
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Parent Role</Typography>
+                <Typography>{selectedRole.parentRole?.name || 'None (Top Level)'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Users</Typography>
+                <Typography>{selectedRole._count.users} users assigned</Typography>
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Child Roles</Typography>
+                <Typography>{selectedRole._count.childRoles} child roles</Typography>
+              </Box>
+            </Box>
+          )}
+          {selectedRole && editMode && (
+            <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField
+                fullWidth
+                label="Name"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+              />
+              <TextField
+                fullWidth
+                label="Label"
+                value={editFormData.label}
+                onChange={(e) => setEditFormData({ ...editFormData, label: e.target.value })}
+              />
+              <TextField
+                fullWidth
+                label="Description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                multiline
+                rows={2}
+              />
+              <FormControl fullWidth>
+                <InputLabel>Parent Role</InputLabel>
+                <Select
+                  value={editFormData.parentRoleId}
+                  onChange={(e) => setEditFormData({ ...editFormData, parentRoleId: e.target.value })}
+                  label="Parent Role"
+                >
+                  <MenuItem value="">None (Top Level)</MenuItem>
+                  {roles
+                    .filter((role) => role.id !== selectedRole.id)
+                    .map((role) => (
+                      <MenuItem key={role.id} value={role.id}>
+                        {role.label || role.name}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {editMode ? (
+            <>
+              <Button onClick={() => setEditMode(false)}>Cancel</Button>
+              <Button onClick={handleSaveEdit} variant="contained" disabled={!editFormData.name}>
+                Save
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={() => { setDetailDialogOpen(false); setSelectedRole(null); }}>Close</Button>
+              <Button onClick={handleStartEdit} variant="outlined" startIcon={<EditIcon />}>
+                Edit
+              </Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Permission Set Detail Dialog */}
+      <Dialog open={detailDialogOpen && !!selectedPermissionSet} onClose={() => { setDetailDialogOpen(false); setSelectedPermissionSet(null); }} maxWidth="sm" fullWidth>
+        <DialogTitle>Permission Set Details</DialogTitle>
+        <DialogContent>
+          {selectedPermissionSet && (
+            <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Name</Typography>
+                <Typography>{selectedPermissionSet.name}</Typography>
+              </Box>
+              {selectedPermissionSet.description && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Description</Typography>
+                  <Typography>{selectedPermissionSet.description}</Typography>
+                </Box>
+              )}
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Status</Typography>
+                <Chip
+                  label={selectedPermissionSet.isActive ? 'Active' : 'Inactive'}
+                  color={selectedPermissionSet.isActive ? 'success' : 'default'}
+                  size="small"
+                />
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Assignments</Typography>
+                <Typography>{selectedPermissionSet._count.assignments} users</Typography>
+              </Box>
+              {selectedPermissionSet.permissions && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>Permissions</Typography>
+                  <Paper sx={{ p: 1, bgcolor: 'grey.50' }}>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                      {JSON.stringify(selectedPermissionSet.permissions, null, 2)}
+                    </Typography>
+                  </Paper>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setDetailDialogOpen(false); setSelectedPermissionSet(null); }}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Create Role Dialog */}
       <Dialog open={roleDialogOpen} onClose={() => setRoleDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -640,15 +938,18 @@ export default function RolesPage() {
           </Typography>
           <TableContainer>
             <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Object</TableCell>
-                  <TableCell>Read</TableCell>
-                  <TableCell>Create</TableCell>
-                  <TableCell>Edit</TableCell>
-                  <TableCell>Delete</TableCell>
-                </TableRow>
-              </TableHead>
+              <SortableTableHead
+                columns={[
+                  { id: 'object', label: 'Object', sortable: false },
+                  { id: 'read', label: 'Read', sortable: false },
+                  { id: 'create', label: 'Create', sortable: false },
+                  { id: 'edit', label: 'Edit', sortable: false },
+                  { id: 'delete', label: 'Delete', sortable: false },
+                ]}
+                sortBy=""
+                sortOrder="asc"
+                onSort={() => {}}
+              />
               <TableBody>
                 {Object.entries(permissionFormData.permissions).map(([object, perms]) => (
                   <TableRow key={object}>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 // GET - List entitlements and SLAs
 export async function GET(request: NextRequest) {
@@ -29,6 +30,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ processes });
     }
 
+    const paginationParams = parsePaginationParams(request);
+
     const whereClause: any = {};
 
     if (accountId) {
@@ -39,9 +42,11 @@ export async function GET(request: NextRequest) {
       whereClause.status = status;
     }
 
+    const total = await prisma.entitlement.count({ where: whereClause });
+
     const entitlements = await prisma.entitlement.findMany({
       where: whereClause,
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for entitlements
@@ -79,7 +84,7 @@ export async function GET(request: NextRequest) {
       totalCasesRemaining: entitlementsWithRelations.reduce((sum, e) => sum + (e.remainingCases || 0), 0),
     };
 
-    return NextResponse.json({ entitlements: entitlementsWithRelations, stats });
+    return NextResponse.json(buildPaginatedResponse(entitlementsWithRelations, total, paginationParams));
   } catch (error) {
     console.error('Error fetching entitlements:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

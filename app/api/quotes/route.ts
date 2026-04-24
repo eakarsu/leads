@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,8 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req);
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
@@ -20,13 +23,15 @@ export async function GET(req: NextRequest) {
     if (opportunityId) where.opportunityId = opportunityId;
     if (accountId) where.accountId = accountId;
 
+    const total = await prisma.quote.count({ where });
+
     const quotes = await prisma.quote.findMany({
       where,
       include: {
         lineItems: true,
         _count: { select: { lineItems: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for quotes
@@ -53,7 +58,7 @@ export async function GET(req: NextRequest) {
       totalValue: quotesWithAccounts.reduce((sum, q) => sum + (typeof q.grandTotal === 'number' ? q.grandTotal : 0), 0),
     };
 
-    return NextResponse.json({ quotes: quotesWithAccounts, stats });
+    return NextResponse.json(buildPaginatedResponse(quotesWithAccounts, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching quotes:', error);
     return NextResponse.json({ error: 'Failed to fetch quotes' }, { status: 500 });

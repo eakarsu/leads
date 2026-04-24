@@ -107,18 +107,9 @@ Generate actionable recommendations. Respond with ONLY a JSON object in this for
     return NextResponse.json(parsed);
   } catch (error: any) {
     console.error('Error generating next best actions:', error);
-    return NextResponse.json({
-      actions: [
-        {
-          priority: 'HIGH',
-          action: 'Review Overdue Tasks',
-          description: 'You have overdue tasks that need attention.',
-          estimatedImpact: 'High',
-          objectType: 'Task',
-          objectId: null,
-          dueBy: 'Today',
-        },
-      ],
-    });
+    return NextResponse.json(
+      { error: error.message || 'Failed to generate next best actions' },
+      { status: 500 }
+    );
   }
 }

@@ -1,5 +1,7 @@
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
+import { seedAllFeatures } from './seed-all-features';
+import { seedFieldServiceAndPhase2 } from './seed-field-service';
 
 async function main() {
   console.log('🌱 Starting seed...');
@@ -18,19 +20,22 @@ async function main() {
   });
   console.log('✅ Admin user created');
 
-  const homeServicesClient = await prisma.clientCompany.upsert({
+  let homeServicesClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'contact@acmehvac.com' },
-    update: {},
-    create: {
-      name: 'ACME HVAC & Plumbing',
-      industry: 'Home Services',
-      businessSector: 'HOME_SERVICES',
-      website: 'https://acmehvac.com',
-      contactName: 'John Smith',
-      contactEmail: 'contact@acmehvac.com',
-      contactPhone: '555-1234',
-    },
   });
+  if (!homeServicesClient) {
+    homeServicesClient = await prisma.clientCompany.create({
+      data: {
+        name: 'ACME HVAC & Plumbing',
+        industry: 'Home Services',
+        businessSector: 'HOME_SERVICES',
+        website: 'https://acmehvac.com',
+        contactName: 'John Smith',
+        contactEmail: 'contact@acmehvac.com',
+        contactPhone: '555-1234',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'john@acmehvac.com' },
@@ -81,19 +86,22 @@ async function main() {
   });
   console.log('✅ Home Services client created with sample leads');
 
-  const legalClient = await prisma.clientCompany.upsert({
+  let legalClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'info@smithlawfirm.com' },
-    update: {},
-    create: {
-      name: 'Smith & Associates Law Firm',
-      industry: 'Legal Services',
-      businessSector: 'LEGAL_SERVICES',
-      website: 'https://smithlawfirm.com',
-      contactName: 'Michael Smith',
-      contactEmail: 'info@smithlawfirm.com',
-      contactPhone: '555-5678',
-    },
   });
+  if (!legalClient) {
+    legalClient = await prisma.clientCompany.create({
+      data: {
+        name: 'Smith & Associates Law Firm',
+        industry: 'Legal Services',
+        businessSector: 'LEGAL_SERVICES',
+        website: 'https://smithlawfirm.com',
+        contactName: 'Michael Smith',
+        contactEmail: 'info@smithlawfirm.com',
+        contactPhone: '555-5678',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'michael@smithlawfirm.com' },
@@ -145,19 +153,22 @@ async function main() {
   console.log('✅ Legal Services client created with sample leads');
 
   // HOSPITALITY SECTOR
-  const hospitalityClient = await prisma.clientCompany.upsert({
+  let hospitalityClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'info@grandviewhotel.com' },
-    update: {},
-    create: {
-      name: 'Grand View Hotel & Restaurant',
-      industry: 'Hospitality',
-      businessSector: 'HOSPITALITY',
-      website: 'https://grandviewhotel.com',
-      contactName: 'Emily Chen',
-      contactEmail: 'info@grandviewhotel.com',
-      contactPhone: '555-3000',
-    },
   });
+  if (!hospitalityClient) {
+    hospitalityClient = await prisma.clientCompany.create({
+      data: {
+        name: 'Grand View Hotel & Restaurant',
+        industry: 'Hospitality',
+        businessSector: 'HOSPITALITY',
+        website: 'https://grandviewhotel.com',
+        contactName: 'Emily Chen',
+        contactEmail: 'info@grandviewhotel.com',
+        contactPhone: '555-3000',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'emily@grandviewhotel.com' },
@@ -173,19 +184,22 @@ async function main() {
   console.log('✅ Hospitality client created');
 
   // FITNESS_WELLNESS SECTOR
-  const fitnessClient = await prisma.clientCompany.upsert({
+  let fitnessClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'contact@zenfitstudio.com' },
-    update: {},
-    create: {
-      name: 'ZenFit Yoga & Wellness Studio',
-      industry: 'Fitness & Wellness',
-      businessSector: 'FITNESS_WELLNESS',
-      website: 'https://zenfitstudio.com',
-      contactName: 'Marcus Thompson',
-      contactEmail: 'contact@zenfitstudio.com',
-      contactPhone: '555-4000',
-    },
   });
+  if (!fitnessClient) {
+    fitnessClient = await prisma.clientCompany.create({
+      data: {
+        name: 'ZenFit Yoga & Wellness Studio',
+        industry: 'Fitness & Wellness',
+        businessSector: 'FITNESS_WELLNESS',
+        website: 'https://zenfitstudio.com',
+        contactName: 'Marcus Thompson',
+        contactEmail: 'contact@zenfitstudio.com',
+        contactPhone: '555-4000',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'marcus@zenfitstudio.com' },
@@ -201,19 +215,22 @@ async function main() {
   console.log('✅ Fitness & Wellness client created');
 
   // CONSTRUCTION SECTOR
-  const constructionClient = await prisma.clientCompany.upsert({
+  let constructionClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'info@premierbuilders.com' },
-    update: {},
-    create: {
-      name: 'Premier Builders & Contractors',
-      industry: 'Construction',
-      businessSector: 'CONSTRUCTION',
-      website: 'https://premierbuilders.com',
-      contactName: 'David Rodriguez',
-      contactEmail: 'info@premierbuilders.com',
-      contactPhone: '555-5000',
-    },
   });
+  if (!constructionClient) {
+    constructionClient = await prisma.clientCompany.create({
+      data: {
+        name: 'Premier Builders & Contractors',
+        industry: 'Construction',
+        businessSector: 'CONSTRUCTION',
+        website: 'https://premierbuilders.com',
+        contactName: 'David Rodriguez',
+        contactEmail: 'info@premierbuilders.com',
+        contactPhone: '555-5000',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'david@premierbuilders.com' },
@@ -229,19 +246,22 @@ async function main() {
   console.log('✅ Construction client created');
 
   // ECOMMERCE SECTOR
-  const ecommerceClient = await prisma.clientCompany.upsert({
+  let ecommerceClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'hello@trendygoods.com' },
-    update: {},
-    create: {
-      name: 'TrendyGoods Online Store',
-      industry: 'E-Commerce',
-      businessSector: 'ECOMMERCE',
-      website: 'https://trendygoods.com',
-      contactName: 'Jessica Lee',
-      contactEmail: 'hello@trendygoods.com',
-      contactPhone: '555-6000',
-    },
   });
+  if (!ecommerceClient) {
+    ecommerceClient = await prisma.clientCompany.create({
+      data: {
+        name: 'TrendyGoods Online Store',
+        industry: 'E-Commerce',
+        businessSector: 'ECOMMERCE',
+        website: 'https://trendygoods.com',
+        contactName: 'Jessica Lee',
+        contactEmail: 'hello@trendygoods.com',
+        contactPhone: '555-6000',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'jessica@trendygoods.com' },
@@ -257,19 +277,22 @@ async function main() {
   console.log('✅ E-Commerce client created');
 
   // INSURANCE SECTOR
-  const insuranceClient = await prisma.clientCompany.upsert({
+  let insuranceClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'contact@shieldinsurance.com' },
-    update: {},
-    create: {
-      name: 'Shield Insurance Agency',
-      industry: 'Insurance',
-      businessSector: 'INSURANCE',
-      website: 'https://shieldinsurance.com',
-      contactName: 'Brian Anderson',
-      contactEmail: 'contact@shieldinsurance.com',
-      contactPhone: '555-7000',
-    },
   });
+  if (!insuranceClient) {
+    insuranceClient = await prisma.clientCompany.create({
+      data: {
+        name: 'Shield Insurance Agency',
+        industry: 'Insurance',
+        businessSector: 'INSURANCE',
+        website: 'https://shieldinsurance.com',
+        contactName: 'Brian Anderson',
+        contactEmail: 'contact@shieldinsurance.com',
+        contactPhone: '555-7000',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'brian@shieldinsurance.com' },
@@ -285,19 +308,22 @@ async function main() {
   console.log('✅ Insurance client created');
 
   // SOLAR_ENERGY SECTOR
-  const solarClient = await prisma.clientCompany.upsert({
+  let solarClient = await prisma.clientCompany.findFirst({
     where: { contactEmail: 'info@sunshinepowersolar.com' },
-    update: {},
-    create: {
-      name: 'Sunshine Power Solar',
-      industry: 'Solar Energy',
-      businessSector: 'SOLAR_ENERGY',
-      website: 'https://sunshinepowersolar.com',
-      contactName: 'Amanda Martinez',
-      contactEmail: 'info@sunshinepowersolar.com',
-      contactPhone: '555-8000',
-    },
   });
+  if (!solarClient) {
+    solarClient = await prisma.clientCompany.create({
+      data: {
+        name: 'Sunshine Power Solar',
+        industry: 'Solar Energy',
+        businessSector: 'SOLAR_ENERGY',
+        website: 'https://sunshinepowersolar.com',
+        contactName: 'Amanda Martinez',
+        contactEmail: 'info@sunshinepowersolar.com',
+        contactPhone: '555-8000',
+      },
+    });
+  }
 
   await prisma.user.upsert({
     where: { email: 'amanda@sunshinepowersolar.com' },
@@ -311,6 +337,22 @@ async function main() {
     },
   });
   console.log('✅ Solar Energy client created');
+
+  // Seed all features data (15+ records per entity)
+  console.log('\n📦 Seeding feature data...');
+  try {
+    await seedAllFeatures();
+  } catch (err) {
+    console.log('⚠️ Feature seed skipped (may already exist):', (err as Error).message);
+  }
+
+  // Seed Field Service + Phase 2 CRM features
+  console.log('\n📦 Seeding Field Service + Phase 2 features...');
+  try {
+    await seedFieldServiceAndPhase2();
+  } catch (err) {
+    console.log('⚠️ Field Service seed skipped (may already exist):', (err as Error).message);
+  }
 
   console.log('\n🎉 Seed completed!');
   console.log('\nLogin credentials:');

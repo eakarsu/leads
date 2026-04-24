@@ -103,35 +103,69 @@ enum EmailStatus {
 }
 
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  hashedPassword String
-  name           String
-  role           UserRole @default(CLIENT)
-  clientId       String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String    @id @default(uuid())
+  email           String    @unique
+  hashedPassword  String
+  name            String
+  role            UserRole  @default(CLIENT)
+  clientId        String?
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
-  client              ClientCompany?  @relation(fields: [clientId], references: [id])
-  ownedCampaigns      Campaign[]
-  activities          LeadActivity[]
-  createdThreads      MessageThread[]
-  sentMessages        Message[]
-  submittedLeads      Lead[]
-  ownedOpportunities  Opportunity[]
-  assignedTasks       Task[]          @relation("AssignedTasks")
-  createdTasks        Task[]          @relation("CreatedTasks")
-  events              Event[]
-  sentEmails          Email[]
-  contacts            Contact[]
-  createdNotes        Note[]          @relation("CreatedNotes")
-  uploadedAttachments Attachment[]    @relation("UploadedAttachments")
-  notifications       Notification[]
-  createdProcessFlows ProcessFlow[]   @relation("CreatedProcessFlows")
+  client                  ClientCompany?           @relation(fields: [clientId], references: [id])
+  ownedCampaigns          Campaign[]
+  activities              LeadActivity[]
+  createdThreads          MessageThread[]
+  sentMessages            Message[]
+  submittedLeads          Lead[]
+  ownedOpportunities      Opportunity[]
+  assignedTasks           Task[]                   @relation("AssignedTasks")
+  createdTasks            Task[]                   @relation("CreatedTasks")
+  events                  Event[]
+  sentEmails              Email[]
+  contacts                Contact[]
+  createdNotes            Note[]                   @relation("CreatedNotes")
+  uploadedAttachments     Attachment[]             @relation("UploadedAttachments")
+  notifications           Notification[]
+  createdProcessFlows     ProcessFlow[]            @relation("CreatedProcessFlows")
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@index([clientId])
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("email_verification_tokens")
 }
 
 model ClientCompany {
@@ -161,6 +195,7 @@ model ClientCompany {
   territories      Territory[]
   products         Product[]
   serviceContracts ServiceContract[] @relation("ServiceContracts")
+  workOrders       WorkOrder[]
 
   @@map("client_companies")
 }
@@ -3052,4 +3087,830 @@ model CalendarSyncAccount {
 
   @@unique([userId, email])
   @@map("calendar_sync_accounts")
+}
+
+// ============================================
+// FIELD SERVICE MANAGEMENT
+// ============================================
+
+enum WorkOrderStatus {
+  NEW
+  PENDING
+  OPEN
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+  CLOSED
+}
+
+enum WorkOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+  EMERGENCY
+}
+
+enum ServiceAppointmentStatus {
+  NONE
+  SCHEDULED
+  DISPATCHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  CANNOT_COMPLETE
+}
+
+enum TimeSheetStatus {
+  NEW
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum AbsenceType {
+  VACATION
+  SICK
+  PERSONAL
+  TRAINING
+  JURY_DUTY
+  BEREAVEMENT
+  OTHER
+}
+
+enum ShiftTimeSlotType {
+  NORMAL
+  EXTENDED
+  ON_CALL
+  BREAK
+}
+
+enum MaintenanceFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUALLY
+  ANNUALLY
+}
+
+model ServiceTerritory {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("PRIMARY") // PRIMARY, SECONDARY, RELOCATION
+  parentId    String?
+  description String?  @db.Text
+  city        String?
+  state       String?
+  country     String?
+  latitude    Float?
+  longitude   Float?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent             ServiceTerritory?    @relation("TerritoryHierarchyFS", fields: [parentId], references: [id])
+  children           ServiceTerritory[]   @relation("TerritoryHierarchyFS")
+  members            TerritoryMember[]
+  crews              ServiceCrew[]
+  workOrders         WorkOrder[]
+  appointments       ServiceAppointment[]
+  shifts             Shift[]
+  fieldServiceAssets FieldServiceAsset[]
+  maintenancePlans   MaintenancePlan[]
+  serviceResources   ServiceResource[]
+
+  @@index([parentId])
+  @@index([isActive])
+  @@map("service_territories")
+}
+
+model OperatingHours {
+  id             String   @id @default(uuid())
+  name           String
+  timezone       String   @default("America/New_York")
+  mondayStart    String?
+  mondayEnd      String?
+  tuesdayStart   String?
+  tuesdayEnd     String?
+  wednesdayStart String?
+  wednesdayEnd   String?
+  thursdayStart  String?
+  thursdayEnd    String?
+  fridayStart    String?
+  fridayEnd      String?
+  saturdayStart  String?
+  saturdayEnd    String?
+  sundayStart    String?
+  sundayEnd      String?
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("operating_hours")
+}
+
+model ServiceResource {
+  id                String   @id @default(uuid())
+  name              String
+  resourceType      String   @default("TECHNICIAN") // TECHNICIAN, DISPATCHER, CREW_MEMBER
+  email             String?
+  phone             String?
+  isActive          Boolean  @default(true)
+  territoryId       String?
+  efficiencyRating  Float?
+  travelSpeed       Float?
+  maxTravelDistance Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  territory    ServiceTerritory?      @relation(fields: [territoryId], references: [id])
+  skills       ServiceResourceSkill[]
+  territories  TerritoryMember[]
+  absences     ResourceAbsence[]
+  appointments ServiceAppointment[]
+  shifts       Shift[]
+  timeSheets   TimeSheet[]
+  timeEntries  TimeSheetEntry[]
+  leadCrew     ServiceCrew[]          @relation("CrewLead")
+
+  @@index([territoryId])
+  @@index([isActive])
+  @@map("service_resources")
+}
+
+model Skill {
+  id          String   @id @default(uuid())
+  name        String
+  skillType   String   @default("TECHNICAL") // TECHNICAL, CERTIFICATION, LANGUAGE
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  resources ServiceResourceSkill[]
+
+  @@map("skills")
+}
+
+model ServiceResourceSkill {
+  id             String    @id @default(uuid())
+  resourceId     String
+  skillId        String
+  skillLevel     String    @default("INTERMEDIATE") // BEGINNER, INTERMEDIATE, ADVANCED, EXPERT
+  effectiveStart DateTime  @default(now())
+  effectiveEnd   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  resource ServiceResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  skill    Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, skillId])
+  @@index([resourceId])
+  @@index([skillId])
+  @@map("service_resource_skills")
+}
+
+model TerritoryMember {
+  id             String    @id @default(uuid())
+  resourceId     String
+  territoryId    String
+  membershipType String    @default("PRIMARY") // PRIMARY, SECONDARY, RELOCATION
+  effectiveStart DateTime  @default(now())
+  effectiveEnd   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  resource  ServiceResource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  territory ServiceTerritory @relation(fields: [territoryId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, territoryId])
+  @@index([resourceId])
+  @@index([territoryId])
+  @@map("territory_members")
+}
+
+model ServiceCrew {
+  id             String   @id @default(uuid())
+  name           String
+  crewSize       Int      @default(1)
+  leadId         String?
+  territoryId    String?
+  specialization String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lead      ServiceResource?  @relation("CrewLead", fields: [leadId], references: [id])
+  territory ServiceTerritory? @relation(fields: [territoryId], references: [id])
+
+  @@index([leadId])
+  @@index([territoryId])
+  @@map("service_crews")
+}
+
+model ResourceAbsence {
+  id          String      @id @default(uuid())
+  resourceId  String
+  type        AbsenceType @default(OTHER)
+  startTime   DateTime
+  endTime     DateTime
+  description String?     @db.Text
+  approvedBy  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  resource ServiceResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId])
+  @@index([startTime])
+  @@map("resource_absences")
+}
+
+model WorkType {
+  id                       String   @id @default(uuid())
+  name                     String
+  estimatedDurationMinutes Int      @default(60)
+  skillRequirement         String?
+  blockTimeBefore          Int      @default(0)
+  blockTimeAfter           Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  workOrders       WorkOrder[]
+  lineItems        WorkOrderLineItem[]
+  maintenancePlans MaintenancePlan[]
+
+  @@map("work_types")
+}
+
+model WorkOrder {
+  id              String            @id @default(uuid())
+  workOrderNumber String            @unique @default(uuid())
+  subject         String
+  description     String?           @db.Text
+  accountId       String?
+  contactName     String?
+  contactPhone    String?
+  contactEmail    String?
+  budget          Float?
+  region          String?
+  district        String?
+  market          String?
+  territoryId     String?
+  workTypeId      String?
+  priority        WorkOrderPriority @default(MEDIUM)
+  status          WorkOrderStatus   @default(NEW)
+  address         String?
+  city            String?
+  state           String?
+  latitude        Float?
+  longitude       Float?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  account      ClientCompany?       @relation(fields: [accountId], references: [id])
+  territory    ServiceTerritory?    @relation(fields: [territoryId], references: [id])
+  workType     WorkType?            @relation(fields: [workTypeId], references: [id])
+  lineItems    WorkOrderLineItem[]
+  appointments ServiceAppointment[]
+  timeEntries  TimeSheetEntry[]
+
+  @@index([accountId])
+  @@index([territoryId])
+  @@index([workTypeId])
+  @@index([status])
+  @@index([priority])
+  @@map("work_orders")
+}
+
+model WorkOrderLineItem {
+  id              String   @id @default(uuid())
+  workOrderId     String
+  lineItemNumber  Int      @default(1)
+  description     String?  @db.Text
+  workTypeId      String?
+  status          String   @default("NEW")
+  durationMinutes Int      @default(60)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workType  WorkType? @relation(fields: [workTypeId], references: [id])
+
+  @@index([workOrderId])
+  @@index([workTypeId])
+  @@map("work_order_line_items")
+}
+
+model ServiceAppointment {
+  id                String                   @id @default(uuid())
+  appointmentNumber String                   @unique @default(uuid())
+  workOrderId       String?
+  subject           String
+  status            ServiceAppointmentStatus @default(NONE)
+  scheduledStart    DateTime?
+  scheduledEnd      DateTime?
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  durationMinutes   Int                      @default(60)
+  resourceId        String?
+  territoryId       String?
+  address           String?
+  city              String?
+  state             String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  workOrder WorkOrder?        @relation(fields: [workOrderId], references: [id])
+  resource  ServiceResource?  @relation(fields: [resourceId], references: [id])
+  territory ServiceTerritory? @relation(fields: [territoryId], references: [id])
+
+  @@index([workOrderId])
+  @@index([resourceId])
+  @@index([territoryId])
+  @@index([status])
+  @@index([scheduledStart])
+  @@map("service_appointments")
+}
+
+model Shift {
+  id           String            @id @default(uuid())
+  territoryId  String?
+  label        String
+  startTime    DateTime
+  endTime      DateTime
+  timeSlotType ShiftTimeSlotType @default(NORMAL)
+  resourceId   String?
+  status       String            @default("CONFIRMED")
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  territory ServiceTerritory? @relation(fields: [territoryId], references: [id])
+  resource  ServiceResource?  @relation(fields: [resourceId], references: [id])
+
+  @@index([territoryId])
+  @@index([resourceId])
+  @@index([startTime])
+  @@map("shifts")
+}
+
+model TimeSheet {
+  id         String          @id @default(uuid())
+  resourceId String
+  startDate  DateTime
+  endDate    DateTime
+  totalHours Float           @default(0)
+  status     TimeSheetStatus @default(NEW)
+  approvedBy String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  resource ServiceResource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  entries  TimeSheetEntry[]
+
+  @@index([resourceId])
+  @@index([status])
+  @@map("time_sheets")
+}
+
+model TimeSheetEntry {
+  id            String   @id @default(uuid())
+  timeSheetId   String
+  resourceId    String
+  workOrderId   String?
+  type          String   @default("WORK") // WORK, TRAVEL, BREAK
+  startTime     DateTime
+  endTime       DateTime
+  durationHours Float    @default(0)
+  description   String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  timeSheet TimeSheet       @relation(fields: [timeSheetId], references: [id], onDelete: Cascade)
+  resource  ServiceResource @relation(fields: [resourceId], references: [id])
+  workOrder WorkOrder?      @relation(fields: [workOrderId], references: [id])
+
+  @@index([timeSheetId])
+  @@index([resourceId])
+  @@index([workOrderId])
+  @@map("time_sheet_entries")
+}
+
+model FieldServiceAsset {
+  id              String    @id @default(uuid())
+  name            String
+  serialNumber    String?
+  accountName     String?
+  productName     String?
+  installDate     DateTime?
+  warrantyEnd     DateTime?
+  territoryId     String?
+  address         String?
+  lastServiceDate DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  territory        ServiceTerritory? @relation(fields: [territoryId], references: [id])
+  maintenancePlans MaintenancePlan[]
+
+  @@index([territoryId])
+  @@index([serialNumber])
+  @@map("field_service_assets")
+}
+
+model MaintenancePlan {
+  id                String               @id @default(uuid())
+  title             String
+  workTypeId        String?
+  assetId           String?
+  frequency         MaintenanceFrequency @default(MONTHLY)
+  nextSuggestedDate DateTime?
+  territoryId       String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  workType  WorkType?          @relation(fields: [workTypeId], references: [id])
+  asset     FieldServiceAsset? @relation(fields: [assetId], references: [id])
+  territory ServiceTerritory?  @relation(fields: [territoryId], references: [id])
+
+  @@index([workTypeId])
+  @@index([assetId])
+  @@index([territoryId])
+  @@map("maintenance_plans")
+}
+
+model SchedulingPolicy {
+  id                     String   @id @default(uuid())
+  name                   String
+  policyType             String   @default("STANDARD") // STANDARD, EMERGENCY, HIGH_PRIORITY
+  travelTimeOptimization Boolean  @default(true)
+  skillMatching          Boolean  @default(true)
+  priorityWeight         Int      @default(50)
+  territoryPreference    String   @default("PRIMARY") // PRIMARY, ANY
+  maxTravelDistance      Float?
+  sameDayPolicy          String   @default("ALLOW") // ALLOW, PREFER, REQUIRE
+  emergencyOverride      Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("scheduling_policies")
+}
+
+// ============================================
+// PHASE 2: SALES CLOUD ENHANCEMENTS
+// ============================================
+
+model SalesCadence {
+  id         String   @id @default(uuid())
+  name       String
+  status     String   @default("DRAFT") // DRAFT, ACTIVE, PAUSED, ARCHIVED
+  type       String   @default("OUTBOUND") // OUTBOUND, INBOUND, EVENT_BASED
+  totalSteps Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  steps       SalesCadenceStep[]
+  enrollments SalesCadenceEnrollment[]
+
+  @@index([status])
+  @@map("sales_cadences")
+}
+
+model SalesCadenceStep {
+  id        String   @id @default(uuid())
+  cadenceId String
+  stepOrder Int
+  stepType  String // EMAIL, CALL, LINKEDIN, WAIT, CUSTOM
+  subject   String?
+  body      String?  @db.Text
+  waitDays  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cadence SalesCadence @relation(fields: [cadenceId], references: [id], onDelete: Cascade)
+
+  @@index([cadenceId])
+  @@map("sales_cadence_steps")
+}
+
+model SalesCadenceEnrollment {
+  id          String    @id @default(uuid())
+  cadenceId   String
+  contactId   String?
+  leadId      String?
+  currentStep Int       @default(1)
+  status      String    @default("ACTIVE") // ACTIVE, PAUSED, COMPLETED, REMOVED
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  cadence SalesCadence @relation(fields: [cadenceId], references: [id], onDelete: Cascade)
+
+  @@index([cadenceId])
+  @@index([status])
+  @@map("sales_cadence_enrollments")
+}
+
+model ConversationInsight {
+  id          String   @id @default(uuid())
+  objectType  String // CALL, MEETING, EMAIL
+  objectId    String
+  transcript  String?  @db.Text
+  sentiment   String? // POSITIVE, NEUTRAL, NEGATIVE
+  keyTopics   String[]
+  actionItems String[]
+  aiSummary   String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([objectType, objectId])
+  @@map("conversation_insights")
+}
+
+// ============================================
+// PHASE 2: SERVICE CLOUD ENHANCEMENTS
+// ============================================
+
+model CaseMilestone {
+  id            String    @id @default(uuid())
+  caseId        String
+  milestoneName String
+  targetDate    DateTime
+  completedDate DateTime?
+  status        String    @default("OPEN") // OPEN, COMPLETED, VIOLATED
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([caseId])
+  @@index([status])
+  @@map("case_milestones")
+}
+
+model EinsteinBot {
+  id             String   @id @default(uuid())
+  name           String
+  status         String   @default("DRAFT") // DRAFT, ACTIVE, INACTIVE
+  welcomeMessage String?  @db.Text
+  channels       String[] // WEB, FACEBOOK, WHATSAPP, SMS
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  dialogs BotDialog[]
+
+  @@map("einstein_bots")
+}
+
+model BotDialog {
+  id          String   @id @default(uuid())
+  botId       String
+  triggerType String   @default("KEYWORD") // KEYWORD, INTENT, PATTERN
+  triggers    String[]
+  responses   Json // Array of response objects
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot EinsteinBot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@map("bot_dialogs")
+}
+
+model SocialPost {
+  id         String   @id @default(uuid())
+  platform   String // TWITTER, FACEBOOK, INSTAGRAM, LINKEDIN
+  authorName String
+  content    String   @db.Text
+  sentiment  String? // POSITIVE, NEUTRAL, NEGATIVE
+  caseId     String?
+  status     String   @default("NEW") // NEW, IN_PROGRESS, RESPONDED, CLOSED
+  response   String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([platform])
+  @@index([caseId])
+  @@index([status])
+  @@map("social_posts")
+}
+
+model MessagingConversation {
+  id          String   @id @default(uuid())
+  channel     String   @default("SMS") // SMS, WHATSAPP, FACEBOOK_MESSENGER
+  contactId   String?
+  phoneNumber String?
+  status      String   @default("ACTIVE") // ACTIVE, CLOSED, PENDING
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages MessagingMessage[]
+
+  @@index([contactId])
+  @@index([status])
+  @@map("messaging_conversations")
+}
+
+model MessagingMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  direction      String   @default("INBOUND") // INBOUND, OUTBOUND
+  content        String   @db.Text
+  status         String   @default("SENT") // SENT, DELIVERED, READ, FAILED
+  createdAt      DateTime @default(now())
+
+  conversation MessagingConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messaging_messages")
+}
+
+// ============================================
+// PHASE 2: MARKETING CLOUD ENHANCEMENTS
+// ============================================
+
+model ABTest {
+  id             String   @id @default(uuid())
+  name           String
+  status         String   @default("DRAFT") // DRAFT, RUNNING, COMPLETED, CANCELLED
+  testType       String   @default("EMAIL") // EMAIL, LANDING_PAGE, SUBJECT_LINE
+  variantA       Json // Variant A configuration
+  variantB       Json // Variant B configuration
+  splitPercent   Int      @default(50) // Percent going to variant A
+  winnerCriteria String   @default("OPEN_RATE") // OPEN_RATE, CLICK_RATE, CONVERSION
+  results        Json? // Test results
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@map("ab_tests")
+}
+
+model LandingPage {
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  status          String   @default("DRAFT") // DRAFT, PUBLISHED, ARCHIVED
+  htmlContent     String?  @db.Text
+  formConfig      Json? // Form fields configuration
+  viewCount       Int      @default(0)
+  conversionCount Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([slug])
+  @@index([status])
+  @@map("landing_pages")
+}
+
+// ============================================
+// PHASE 2: PLATFORM ENHANCEMENTS
+// ============================================
+
+model DynamicDashboard {
+  id        String   @id @default(uuid())
+  name      String
+  layout    Json // Grid layout configuration
+  widgets   Json // Widget definitions
+  isDefault Boolean  @default(false)
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@map("dynamic_dashboards")
+}
+
+model ValidationRule {
+  id           String   @id @default(uuid())
+  name         String
+  objectType   String
+  formula      String   @db.Text
+  errorMessage String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([objectType])
+  @@index([isActive])
+  @@map("validation_rules")
+}
+
+// ============================================
+// PHASE 2: ADDITIONAL MODULES
+// ============================================
+
+model LoyaltyProgram {
+  id              String   @id @default(uuid())
+  name            String
+  status          String   @default("DRAFT") // DRAFT, ACTIVE, PAUSED, ENDED
+  pointsPerDollar Float    @default(1)
+  redemptionRate  Float    @default(0.01) // Dollar value per point
+  tierEnabled     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tiers   LoyaltyTier[]
+  members LoyaltyMember[]
+
+  @@map("loyalty_programs")
+}
+
+model LoyaltyTier {
+  id        String   @id @default(uuid())
+  programId String
+  name      String
+  minPoints Int      @default(0)
+  benefits  Json // Array of benefit descriptions
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+  @@map("loyalty_tiers")
+}
+
+model LoyaltyMember {
+  id             String   @id @default(uuid())
+  programId      String
+  contactId      String?
+  currentPoints  Int      @default(0)
+  lifetimePoints Int      @default(0)
+  currentTier    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  program      LoyaltyProgram       @relation(fields: [programId], references: [id], onDelete: Cascade)
+  transactions LoyaltyTransaction[]
+
+  @@index([programId])
+  @@index([contactId])
+  @@map("loyalty_members")
+}
+
+model LoyaltyTransaction {
+  id          String   @id @default(uuid())
+  memberId    String
+  type        String // EARN, REDEEM, ADJUST, EXPIRE
+  points      Int
+  description String?
+  createdAt   DateTime @default(now())
+
+  member LoyaltyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("loyalty_transactions")
+}
+
+model GeoLocation {
+  id         String   @id @default(uuid())
+  objectType String // ACCOUNT, CONTACT, TERRITORY, WORK_ORDER
+  objectId   String
+  latitude   Float
+  longitude  Float
+  address    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([objectType, objectId])
+  @@map("geo_locations")
+}
+
+model BookingCalendar {
+  id           String   @id @default(uuid())
+  name         String
+  type         String   @default("PERSONAL") // PERSONAL, TEAM, SERVICE
+  ownerId      String
+  duration     Int      @default(30) // Default appointment duration in minutes
+  availability Json // Available time slots configuration
+  publicToken  String   @unique @default(uuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@index([ownerId])
+  @@map("booking_calendars")
+}
+
+model Booking {
+  id          String   @id @default(uuid())
+  calendarId  String
+  bookerName  String
+  bookerEmail String
+  startTime   DateTime
+  endTime     DateTime
+  status      String   @default("CONFIRMED") // CONFIRMED, CANCELLED, COMPLETED, NO_SHOW
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  calendar BookingCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@index([calendarId])
+  @@index([startTime])
+  @@map("bookings")
 }

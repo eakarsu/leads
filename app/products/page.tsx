@@ -11,10 +11,8 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Chip,
-  CircularProgress,
   Alert,
   Dialog,
   DialogTitle,
@@ -29,7 +27,13 @@ import DashboardLayout from '@/components/DashboardLayout';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import VisibilityIcon from '@mui/icons-material/Visibility';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Product {
   id: string;
@@ -48,11 +52,19 @@ interface Product {
   };
 }
 
+const columns: Column[] = [
+  { id: 'name', label: 'Name' },
+  { id: 'code', label: 'Code' },
+  { id: 'category', label: 'Category' },
+  { id: 'unitPrice', label: 'Unit Price', align: 'right' },
+  { id: 'client', label: 'Client', sortable: false },
+  { id: 'isActive', label: 'Status' },
+  { id: 'usage', label: 'Usage', align: 'center', sortable: false },
+  { id: 'actions', label: 'Actions', align: 'center', sortable: false },
+];
+
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -70,41 +82,41 @@ export default function ProductsPage() {
     isActive: true,
   });
 
+  const [sortBy, setSortByLocal] = useState('createdAt');
+  const [sortOrder, setSortOrderLocal] = useState<'asc' | 'desc'>('desc');
+
+  const extraParams: Record<string, string> = {};
+  if (clientFilter) extraParams.clientId = clientFilter;
+  if (categoryFilter) extraParams.category = categoryFilter;
+  if (isActiveFilter) extraParams.isActive = isActiveFilter;
+
+  const { data: products, loading, error: fetchError, pagination, setPage, setPageSize, setSort, refresh } = usePagination<Product>({
+    url: '/api/products',
+    defaultSortBy: 'createdAt',
+    extraParams,
+  });
+
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+  const [localError, setLocalError] = useState('');
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByLocal(col);
+    setSortOrderLocal(newOrder);
+    setSort(col, newOrder);
+  };
+
   useEffect(() => {
-    fetchProducts();
     fetchClients();
   }, []);
-
-  useEffect(() => {
-    fetchProducts();
-  }, [clientFilter, categoryFilter, isActiveFilter]);
-
-  const fetchProducts = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (clientFilter) params.append('clientId', clientFilter);
-      if (categoryFilter) params.append('category', categoryFilter);
-      if (isActiveFilter) params.append('isActive', isActiveFilter);
-
-      const url = `/api/products${params.toString() ? `?${params.toString()}` : ''}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch products');
-      const data = await response.json();
-      setProducts(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchClients = async () => {
     try {
       const response = await fetch('/api/clients');
       if (!response.ok) throw new Error('Failed to fetch clients');
       const data = await response.json();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching clients:', err);
     }
@@ -132,7 +144,6 @@ export default function ProductsPage() {
   const handleCreateProduct = async () => {
     try {
       if (selectedProduct) {
-        // Update existing product
         const response = await fetch(`/api/products/${selectedProduct.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -141,10 +152,9 @@ export default function ProductsPage() {
             unitPrice: parseFloat(formData.unitPrice) || 0,
           }),
         });
-
         if (!response.ok) throw new Error('Failed to update product');
+        toast.showSuccess('Product updated successfully');
       } else {
-        // Create new product
         const response = await fetch('/api/products', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -153,8 +163,8 @@ export default function ProductsPage() {
             unitPrice: parseFloat(formData.unitPrice) || 0,
           }),
         });
-
         if (!response.ok) throw new Error('Failed to create product');
+        toast.showSuccess('Product created successfully');
       }
 
       setOpenDialog(false);
@@ -168,24 +178,33 @@ export default function ProductsPage() {
         category: '',
         isActive: true,
       });
-      fetchProducts();
+      refresh();
     } catch (err: any) {
-      setError(err.message);
+      setLocalError(err.message);
+      toast.showError(err.message);
     }
   };
 
   const handleDeleteProduct = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Product',
+      message: 'Are you sure you want to delete this product? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`/api/products/${id}`, {
         method: 'DELETE',
       });
-
       if (!response.ok) throw new Error('Failed to delete product');
-      fetchProducts();
+      refresh();
+      setOpenViewDialog(false);
+      toast.showSuccess('Product deleted successfully');
     } catch (err: any) {
-      setError(err.message);
+      setLocalError(err.message);
+      toast.showError(err.message);
     }
   };
 
@@ -200,45 +219,48 @@ export default function ProductsPage() {
     new Set(products.map((p) => p.category).filter((c) => c !== null))
   ) as string[];
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
-        </Box>
-      </DashboardLayout>
-    );
-  }
+  const exportData = products.map((p) => ({
+    Name: p.name,
+    Code: p.code || '-',
+    Category: p.category || '-',
+    'Unit Price': formatCurrency(p.unitPrice),
+    Client: p.client.name,
+    Status: p.isActive ? 'Active' : 'Inactive',
+    Usage: `${p._count.lineItems} opportunities`,
+  }));
 
   return (
     <DashboardLayout>
       <Box>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Typography variant="h4">Products</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              setSelectedProduct(null);
-              setFormData({
-                clientId: '',
-                name: '',
-                code: '',
-                description: '',
-                unitPrice: '',
-                category: '',
-                isActive: true,
-              });
-              setOpenDialog(true);
-            }}
-          >
-            New Product
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="products" title="Products Export" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setSelectedProduct(null);
+                setFormData({
+                  clientId: '',
+                  name: '',
+                  code: '',
+                  description: '',
+                  unitPrice: '',
+                  category: '',
+                  isActive: true,
+                });
+                setOpenDialog(true);
+              }}
+            >
+              New Product
+            </Button>
+          </Box>
         </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-            {error}
+        {(localError || fetchError) && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setLocalError('')}>
+            {localError || fetchError}
           </Alert>
         )}
 
@@ -303,86 +325,91 @@ export default function ProductsPage() {
 
         <Card>
           <CardContent>
-            <TableContainer component={Paper} elevation={0}>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Code</TableCell>
-                    <TableCell>Category</TableCell>
-                    <TableCell align="right">Unit Price</TableCell>
-                    <TableCell>Client</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="center">Usage</TableCell>
-                    <TableCell align="center">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {products.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} align="center">
-                        <Typography color="text.secondary">
-                          No products found. Create your first product!
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    products.map((product) => (
-                      <TableRow
-                        key={product.id}
-                        hover
-                        sx={{ cursor: 'pointer' }}
-                        onClick={() => handleViewProduct(product)}
-                      >
-                        <TableCell>{product.name}</TableCell>
-                        <TableCell>{product.code || '-'}</TableCell>
-                        <TableCell>
-                          {product.category ? (
-                            <Chip label={product.category} size="small" variant="outlined" />
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
-                        <TableCell align="right">{formatCurrency(product.unitPrice)}</TableCell>
-                        <TableCell>{product.client.name}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={product.isActive ? 'Active' : 'Inactive'}
-                            size="small"
-                            color={product.isActive ? 'success' : 'default'}
-                          />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip
-                            label={`${product._count.lineItems} opportunities`}
-                            size="small"
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleEditProduct(product)}
-                            title="Edit"
-                            color="primary"
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDeleteProduct(product.id)}
-                            title="Delete"
-                            color="error"
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+            {loading ? (
+              <TableSkeleton rows={8} columns={8} />
+            ) : (
+              <TableContainer component={Paper} elevation={0}>
+                <Table>
+                  <SortableTableHead
+                    columns={columns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {products.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} align="center">
+                          <Typography color="text.secondary">
+                            No products found. Create your first product!
+                          </Typography>
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    ) : (
+                      products.map((product) => (
+                        <TableRow
+                          key={product.id}
+                          hover
+                          sx={{ cursor: 'pointer' }}
+                          onClick={() => handleViewProduct(product)}
+                        >
+                          <TableCell>{product.name}</TableCell>
+                          <TableCell>{product.code || '-'}</TableCell>
+                          <TableCell>
+                            {product.category ? (
+                              <Chip label={product.category} size="small" variant="outlined" />
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(product.unitPrice)}</TableCell>
+                          <TableCell>{product.client.name}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={product.isActive ? 'Active' : 'Inactive'}
+                              size="small"
+                              color={product.isActive ? 'success' : 'default'}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <Chip
+                              label={`${product._count.lineItems} opportunities`}
+                              size="small"
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleEditProduct(product)}
+                              title="Edit"
+                              color="primary"
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteProduct(product.id)}
+                              title="Delete"
+                              color="error"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+                <PaginationControls
+                  page={pagination.page}
+                  pageSize={pagination.pageSize}
+                  totalItems={pagination.totalItems}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                />
+              </TableContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -534,6 +561,15 @@ export default function ProductsPage() {
             )}
           </DialogContent>
           <DialogActions>
+            {selectedProduct && (
+              <Button
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => handleDeleteProduct(selectedProduct.id)}
+              >
+                Delete
+              </Button>
+            )}
             <Button onClick={() => setOpenViewDialog(false)}>Close</Button>
             <Button
               onClick={() => {

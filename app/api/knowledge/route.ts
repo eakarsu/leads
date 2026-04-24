@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
     const categoryId = searchParams.get('categoryId');
@@ -32,9 +35,11 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    const total = await prisma.knowledgeArticle.count({ where });
+
     const articles = await prisma.knowledgeArticle.findMany({
       where,
-      orderBy: { updatedAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch categories for articles
@@ -58,7 +63,7 @@ export async function GET(req: NextRequest) {
       publicArticles: articlesWithCategory.filter(a => a.isPublic).length,
     };
 
-    return NextResponse.json({ articles: articlesWithCategory, stats });
+    return NextResponse.json(buildPaginatedResponse(articlesWithCategory, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching articles:', error);
     return NextResponse.json({ error: 'Failed to fetch articles' }, { status: 500 });

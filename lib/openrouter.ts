@@ -1,7 +1,84 @@
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-haiku';
 
-export async function callOpenRouter(prompt: string, systemPrompt?: string) {
+// Attempt to repair truncated JSON by closing open brackets/braces/strings
+function repairTruncatedJSON(json: string): string {
+  let str = json.trim();
+
+  // If it already parses, return as-is
+  try { JSON.parse(str); return str; } catch {}
+
+  // Track open structures
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true; continue; }
+
+    if (ch === '"' && !inString) { inString = true; continue; }
+    if (ch === '"' && inString) { inString = false; continue; }
+
+    if (!inString) {
+      if (ch === '{') stack.push('}');
+      else if (ch === '[') stack.push(']');
+      else if (ch === '}' || ch === ']') stack.pop();
+    }
+  }
+
+  // Close open string
+  if (inString) {
+    // Truncate the last incomplete string value to a clean break
+    const lastQuote = str.lastIndexOf('"');
+    if (lastQuote > 0) {
+      // Find if this is a value — look backwards for the colon
+      const beforeQuote = str.substring(0, lastQuote).trimEnd();
+      if (beforeQuote.endsWith(':') || beforeQuote.endsWith(',') || beforeQuote.endsWith('[')) {
+        // We're in a value string that got truncated — close it
+        str += '"';
+      } else {
+        // Truncate back to last complete entry
+        const lastComma = str.lastIndexOf(',');
+        const lastBracket = Math.max(str.lastIndexOf('['), str.lastIndexOf('{'));
+        const cutPoint = Math.max(lastComma, lastBracket);
+        if (cutPoint > 0) {
+          str = str.substring(0, cutPoint);
+          if (str.endsWith(',')) str = str.slice(0, -1);
+        }
+      }
+    }
+  }
+
+  // Recount what needs closing after potential truncation
+  const stack2: string[] = [];
+  let inStr2 = false;
+  let esc2 = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (esc2) { esc2 = false; continue; }
+    if (ch === '\\' && inStr2) { esc2 = true; continue; }
+    if (ch === '"') { inStr2 = !inStr2; continue; }
+    if (!inStr2) {
+      if (ch === '{') stack2.push('}');
+      else if (ch === '[') stack2.push(']');
+      else if (ch === '}' || ch === ']') stack2.pop();
+    }
+  }
+
+  // Remove trailing comma before closing
+  str = str.replace(/,\s*$/, '');
+
+  // Close all open structures
+  while (stack2.length > 0) {
+    str += stack2.pop();
+  }
+
+  return str;
+}
+
+export async function callOpenRouter(prompt: string, systemPrompt?: string, maxTokens?: number) {
   if (!OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is not configured');
   }
@@ -15,6 +92,7 @@ export async function callOpenRouter(prompt: string, systemPrompt?: string) {
     },
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
+      max_tokens: maxTokens || 4096,
       messages: [
         ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
         { role: 'user', content: prompt },
@@ -65,12 +143,8 @@ Respond with ONLY a JSON object in this format:
       reasoning: parsed.reasoning,
     };
   } catch (error) {
-    // Fallback if JSON parsing fails
-    return {
-      score: 50,
-      confidence: 0.5,
-      reasoning: 'Unable to parse AI response',
-    };
+    console.error('Failed to parse lead score AI response:', error);
+    throw new Error('AI returned invalid JSON response for lead scoring');
   }
 }
 
@@ -130,17 +204,8 @@ Respond with ONLY a JSON object in this format:
       reasoning: parsed.reasoning || 'No reasoning provided',
     };
   } catch (error) {
-    // Fallback
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + 30);
-
-    return {
-      predictedCloseDate: futureDate.toISOString().split('T')[0],
-      predictedAmount: opportunity.amount,
-      winProbability: opportunity.probability,
-      confidence: 0.5,
-      reasoning: 'Unable to parse AI response',
-    };
+    console.error('Failed to parse opportunity prediction AI response:', error);
+    throw new Error('AI returned invalid JSON response for opportunity prediction');
   }
 }
 
@@ -189,18 +254,21 @@ Generate revenue forecasts for the next 6 months and 2 quarters. Respond with ON
 
   const systemPrompt = 'You are an AI revenue forecasting analyst. Generate accurate revenue predictions based on pipeline data and opportunity characteristics. Always respond with valid JSON only.';
 
-  const response = await callOpenRouter(prompt, systemPrompt);
+  const response = await callOpenRouter(prompt, systemPrompt, 4096);
 
   try {
-    const parsed = JSON.parse(response);
-    return parsed;
+    let jsonStr = response.trim();
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    }
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      return JSON.parse(repairTruncatedJSON(jsonStr));
+    }
   } catch (error) {
-    // Fallback
-    return {
-      monthly: [],
-      quarterly: [],
-      insights: ['Unable to generate forecast - AI response parsing failed'],
-    };
+    console.error('Failed to parse revenue forecast AI response:', error);
+    throw new Error('AI returned invalid JSON response for revenue forecast');
   }
 }
 
@@ -264,8 +332,7 @@ Generate 3-5 actionable insights with priorities. Respond with ONLY a JSON objec
   const systemPrompt = 'You are an AI business intelligence analyst. Generate actionable insights from CRM data to help sales teams improve performance. Always respond with valid JSON only. IMPORTANT: Use only standard ASCII double quotes (") in your JSON response, never use smart quotes or curly quotes.';
 
   try {
-    const response = await callOpenRouter(prompt, systemPrompt);
-    console.log('OpenRouter AI Response:', response);
+    const response = await callOpenRouter(prompt, systemPrompt, 4096);
 
     // Try to extract JSON from response if it's wrapped in markdown or other text
     let jsonStr = response.trim();
@@ -276,35 +343,26 @@ Generate 3-5 actionable insights with priorities. Respond with ONLY a JSON objec
     }
 
     // Replace all types of smart quotes and special characters with regular ones
-    // Use a more comprehensive regex to catch all non-ASCII quote variants
     jsonStr = jsonStr
       .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")  // All single smart quotes
       .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')  // All double smart quotes
       .replace(/[\u2013\u2014]/g, '-')  // Em/en dashes
       .replace(/[\u2026]/g, '...')     // Ellipsis
-      .replace(/"/g, '"')  // Left double quotation mark
-      .replace(/"/g, '"')  // Right double quotation mark
-      .replace(/'/g, "'")  // Left single quotation mark
-      .replace(/'/g, "'"); // Right single quotation mark
+      .replace(/\u201C/g, '"')  // Left double quotation mark
+      .replace(/\u201D/g, '"')  // Right double quotation mark
+      .replace(/\u2018/g, "'")  // Left single quotation mark
+      .replace(/\u2019/g, "'"); // Right single quotation mark
 
-    console.log('Cleaned JSON string:', jsonStr);
-    const parsed = JSON.parse(jsonStr);
-    return parsed;
+    // Try parsing directly first, then repair if truncated
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      console.warn('JSON parse failed, attempting to repair truncated response...');
+      const repaired = repairTruncatedJSON(jsonStr);
+      return JSON.parse(repaired);
+    }
   } catch (error: any) {
-    console.error('Error generating AI insights:', error);
-    console.error('Error message:', error.message);
-
-    // Fallback
-    return {
-      insights: [
-        {
-          type: 'activity_recommendation',
-          title: 'AI Analysis Unavailable',
-          description: `Unable to generate insights - ${error.message}`,
-          priority: 'LOW',
-          actionItems: ['Check OpenRouter API configuration', 'Verify API key is valid', 'Retry analysis later'],
-        },
-      ],
-    };
+    console.error('Failed to generate AI insights:', error.message);
+    throw new Error(`AI insights generation failed: ${error.message}`);
   }
 }

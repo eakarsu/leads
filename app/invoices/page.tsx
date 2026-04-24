@@ -41,7 +41,17 @@ import PendingIcon from '@mui/icons-material/Pending';
 import WarningIcon from '@mui/icons-material/Warning';
 import SendIcon from '@mui/icons-material/Send';
 import PaymentIcon from '@mui/icons-material/Payment';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Invoice {
   id: string;
@@ -57,8 +67,18 @@ interface Invoice {
   payments: any[];
 }
 
+const tableColumns: Column[] = [
+  { id: 'invoiceNumber', label: 'Invoice #' },
+  { id: 'account', label: 'Account', sortable: false },
+  { id: 'invoiceDate', label: 'Date' },
+  { id: 'dueDate', label: 'Due Date' },
+  { id: 'totalAmount', label: 'Total' },
+  { id: 'amountPaid', label: 'Paid' },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [stats, setStats] = useState({
     totalInvoices: 0,
     draftInvoices: 0,
@@ -69,13 +89,19 @@ export default function InvoicesPage() {
     totalPaid: 0,
     totalOutstanding: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    dueDate: '',
+    description: '',
+    taxRate: 0,
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [formData, setFormData] = useState({
@@ -93,22 +119,37 @@ export default function InvoicesPage() {
     notes: '',
   });
 
+  const [sortBy, setSortByLocal] = useState('createdAt');
+  const [sortOrder, setSortOrderLocal] = useState<'asc' | 'desc'>('desc');
+
+  const { data: invoices, loading, error, pagination, setPage, setPageSize, setSort, refresh } = usePagination<Invoice>({
+    url: '/api/invoices',
+    defaultSortBy: 'createdAt',
+  });
+
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortByLocal(col);
+    setSortOrderLocal(newOrder);
+    setSort(col, newOrder);
+  };
+
   useEffect(() => {
-    fetchInvoices();
+    fetchStats();
     fetchAccounts();
     fetchProducts();
   }, []);
 
-  const fetchInvoices = async () => {
+  const fetchStats = async () => {
     try {
       const response = await fetch('/api/invoices');
       const data = await response.json();
-      setInvoices(data.invoices || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching invoices:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -116,7 +157,7 @@ export default function InvoicesPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -126,7 +167,7 @@ export default function InvoicesPage() {
     try {
       const response = await fetch('/api/products');
       const data = await response.json();
-      setProducts(data.products || data || []);
+      setProducts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
     }
@@ -142,11 +183,16 @@ export default function InvoicesPage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchInvoices();
+        refresh();
+        fetchStats();
         resetForm();
+        toast.showSuccess('Invoice created successfully');
+      } else {
+        toast.showError('Failed to create invoice');
       }
     } catch (error) {
       console.error('Error creating invoice:', error);
+      toast.showError('Error creating invoice');
     }
   };
 
@@ -157,9 +203,12 @@ export default function InvoicesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: invoiceId, status: 'SENT' }),
       });
-      fetchInvoices();
+      refresh();
+      fetchStats();
+      toast.showSuccess('Invoice sent successfully');
     } catch (error) {
       console.error('Error sending invoice:', error);
+      toast.showError('Error sending invoice');
     }
   };
 
@@ -178,20 +227,70 @@ export default function InvoicesPage() {
       setPaymentDialogOpen(false);
       setSelectedInvoice(null);
       setPaymentData({ amount: 0, paymentMethod: 'CREDIT_CARD', referenceNumber: '', notes: '' });
-      fetchInvoices();
+      refresh();
+      fetchStats();
+      toast.showSuccess('Payment recorded successfully');
     } catch (error) {
       console.error('Error recording payment:', error);
+      toast.showError('Error recording payment');
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedInvoice) return;
+    setEditFormData({
+      dueDate: selectedInvoice.dueDate ? selectedInvoice.dueDate.split('T')[0] : '',
+      description: (selectedInvoice as any).description || '',
+      taxRate: (selectedInvoice as any).taxRate || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedInvoice) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/invoices', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedInvoice.id, ...editFormData }),
+      });
+      if (response.ok) {
+        refresh();
+        fetchStats();
+        setEditMode(false);
+        setDetailOpen(false);
+        setSelectedInvoice(null);
+        toast.showSuccess('Invoice updated successfully');
+      } else {
+        toast.showError('Failed to update invoice');
+      }
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+      toast.showError('Error updating invoice');
+    } finally {
+      setEditSaving(false);
     }
   };
 
   const handleDeleteInvoice = async (invoiceId: string) => {
-    if (!confirm('Are you sure you want to delete this invoice?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Invoice',
+      message: 'Are you sure you want to delete this invoice? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/invoices?id=${invoiceId}`, { method: 'DELETE' });
-      fetchInvoices();
+      refresh();
+      fetchStats();
+      setDetailOpen(false);
+      toast.showSuccess('Invoice deleted successfully');
     } catch (error) {
       console.error('Error deleting invoice:', error);
+      toast.showError('Error deleting invoice');
     }
   };
 
@@ -269,13 +368,11 @@ export default function InvoicesPage() {
   };
 
   const filteredInvoices = invoices.filter((i) => {
-    // Search filter
     const searchLower = search.toLowerCase();
     const matchesSearch = !search ||
       i.invoiceNumber.toLowerCase().includes(searchLower) ||
       i.account?.name.toLowerCase().includes(searchLower);
 
-    // Tab filter
     let matchesTab = true;
     if (tabValue === 1) matchesTab = i.status === 'DRAFT';
     else if (tabValue === 2) matchesTab = i.status === 'SENT';
@@ -285,18 +382,31 @@ export default function InvoicesPage() {
     return matchesSearch && matchesTab;
   });
 
+  const exportData = filteredInvoices.map((i) => ({
+    'Invoice #': i.invoiceNumber,
+    Account: i.account?.name || '-',
+    Date: new Date(i.invoiceDate).toLocaleDateString(),
+    'Due Date': new Date(i.dueDate).toLocaleDateString(),
+    Total: formatCurrency(i.totalAmount || 0),
+    Paid: formatCurrency(i.amountPaid || 0),
+    Status: i.status,
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Invoices</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Invoice
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="invoices" title="Invoices Export" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Invoice
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -371,113 +481,119 @@ export default function InvoicesPage() {
         </Paper>
 
         {/* Invoices Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Invoice #</TableCell>
-                <TableCell>Account</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell>Due Date</TableCell>
-                <TableCell>Total</TableCell>
-                <TableCell>Paid</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredInvoices.map((invoice) => (
-                <TableRow
-                  key={invoice.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    setSelectedInvoice(invoice);
-                    setDetailOpen(true);
-                  }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {invoice.invoiceNumber}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{invoice.account?.name || '-'}</TableCell>
-                  <TableCell>
-                    {new Date(invoice.invoiceDate).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {new Date(invoice.dueDate).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>{formatCurrency(invoice.totalAmount || 0)}</TableCell>
-                  <TableCell>{formatCurrency(invoice.amountPaid || 0)}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={invoice.status}
-                      color={getStatusColor(invoice.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {invoice.status === 'DRAFT' && (
-                      <Tooltip title="Send">
-                        <IconButton
-                          size="small"
-                          color="info"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSendInvoice(invoice.id);
-                          }}
-                        >
-                          <SendIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {['SENT', 'PARTIALLY_PAID', 'OVERDUE'].includes(invoice.status) && (
-                      <Tooltip title="Record Payment">
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedInvoice(invoice);
-                            setPaymentData({
-                              ...paymentData,
-                              amount: (invoice.totalAmount || 0) - (invoice.amountPaid || 0),
-                            });
-                            setPaymentDialogOpen(true);
-                          }}
-                        >
-                          <PaymentIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {invoice.status === 'DRAFT' && (
-                      <Tooltip title="Delete">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteInvoice(invoice.id);
-                          }}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredInvoices.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No invoices found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        {loading ? (
+          <TableSkeleton rows={8} columns={8} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={tableColumns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {filteredInvoices.map((invoice) => (
+                  <TableRow
+                    key={invoice.id}
+                    hover
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      setSelectedInvoice(invoice);
+                      setEditMode(false);
+                      setDetailOpen(true);
+                    }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {invoice.invoiceNumber}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{invoice.account?.name || '-'}</TableCell>
+                    <TableCell>
+                      {new Date(invoice.invoiceDate).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      {new Date(invoice.dueDate).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>{formatCurrency(invoice.totalAmount || 0)}</TableCell>
+                    <TableCell>{formatCurrency(invoice.amountPaid || 0)}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={invoice.status}
+                        color={getStatusColor(invoice.status) as any}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {invoice.status === 'DRAFT' && (
+                        <Tooltip title="Send">
+                          <IconButton
+                            size="small"
+                            color="info"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendInvoice(invoice.id);
+                            }}
+                          >
+                            <SendIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {['SENT', 'PARTIALLY_PAID', 'OVERDUE'].includes(invoice.status) && (
+                        <Tooltip title="Record Payment">
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedInvoice(invoice);
+                              setPaymentData({
+                                ...paymentData,
+                                amount: (invoice.totalAmount || 0) - (invoice.amountPaid || 0),
+                              });
+                              setPaymentDialogOpen(true);
+                            }}
+                          >
+                            <PaymentIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {invoice.status === 'DRAFT' && (
+                        <Tooltip title="Delete">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteInvoice(invoice.id);
+                            }}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredInvoices.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center">
+                      No invoices found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Create Invoice Dialog */}
@@ -703,7 +819,7 @@ export default function InvoicesPage() {
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedInvoice && (
+          {selectedInvoice && !editMode && (
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="caption" color="textSecondary">Status</Typography>
@@ -803,25 +919,93 @@ export default function InvoicesPage() {
               )}
             </Grid>
           )}
+          {selectedInvoice && editMode && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Due Date"
+                  type="date"
+                  value={editFormData.dueDate}
+                  onChange={(e) => setEditFormData({ ...editFormData, dueDate: e.target.value })}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Tax Rate (%)"
+                  type="number"
+                  value={editFormData.taxRate}
+                  onChange={(e) => setEditFormData({ ...editFormData, taxRate: parseFloat(e.target.value) || 0 })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Description"
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                />
+              </Grid>
+            </Grid>
+          )}
         </DialogContent>
         <DialogActions>
-          {selectedInvoice && ['SENT', 'PARTIALLY_PAID', 'OVERDUE'].includes(selectedInvoice.status) && (
-            <Button
-              color="success"
-              variant="contained"
-              onClick={() => {
-                setPaymentData({
-                  ...paymentData,
-                  amount: (selectedInvoice.totalAmount || 0) - (selectedInvoice.amountPaid || 0),
-                });
-                setDetailOpen(false);
-                setPaymentDialogOpen(true);
-              }}
-            >
-              Record Payment
-            </Button>
+          {!editMode && (
+            <>
+              {selectedInvoice && selectedInvoice.status === 'DRAFT' && (
+                <Button
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  onClick={() => handleDeleteInvoice(selectedInvoice.id)}
+                >
+                  Delete
+                </Button>
+              )}
+              {selectedInvoice && ['SENT', 'PARTIALLY_PAID', 'OVERDUE'].includes(selectedInvoice.status) && (
+                <Button
+                  color="success"
+                  variant="contained"
+                  onClick={() => {
+                    setPaymentData({
+                      ...paymentData,
+                      amount: (selectedInvoice.totalAmount || 0) - (selectedInvoice.amountPaid || 0),
+                    });
+                    setDetailOpen(false);
+                    setPaymentDialogOpen(true);
+                  }}
+                >
+                  Record Payment
+                </Button>
+              )}
+              <Button
+                startIcon={<EditIcon />}
+                onClick={handleStartEdit}
+              >
+                Edit
+              </Button>
+              <Button onClick={() => setDetailOpen(false)}>Close</Button>
+            </>
           )}
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
+          {editMode && (
+            <>
+              <Button
+                startIcon={<CancelIcon />}
+                onClick={() => setEditMode(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+              >
+                {editSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </DashboardLayout>

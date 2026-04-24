@@ -408,6 +408,7 @@ export default function LiveChatPage() {
                               {formatTime(chat.createdAt)}
                             </>
                           }
+                          secondaryTypographyProps={{ component: 'div' }}
                         />
                       </ListItemButton>
                     ))}

@@ -13,7 +13,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   Chip,
   CircularProgress,
@@ -29,14 +28,24 @@ import {
   Divider,
   ToggleButtonGroup,
   ToggleButton,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
 import AddIcon from '@mui/icons-material/Add';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MicIcon from '@mui/icons-material/Mic';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import { industryFields, type CustomField } from '@/lib/industry-fields';
 import VoiceInput from '@/components/VoiceInput';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Lead {
   id: string;
@@ -44,6 +53,7 @@ interface Lead {
   company: string | null;
   title: string | null;
   email: string;
+  phone: string | null;
   status: string;
   qualificationScore: number;
   leadSource: string;
@@ -58,9 +68,22 @@ interface Lead {
   };
 }
 
+const columns: Column[] = [
+  { id: 'fullName', label: 'Name' },
+  { id: 'company', label: 'Company' },
+  { id: 'email', label: 'Email' },
+  { id: 'status', label: 'Status' },
+  { id: 'qualificationScore', label: 'Score' },
+  { id: 'leadSource', label: 'Source' },
+  { id: 'campaign', label: 'Campaign', sortable: false },
+  { id: 'activities', label: 'Activities', sortable: false, align: 'center' },
+];
+
 export default function LeadsPage() {
   const router = useRouter();
   const { data: session } = useSession();
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -75,6 +98,28 @@ export default function LeadsPage() {
   const [importing, setImporting] = useState(false);
   const [importCount, setImportCount] = useState(10);
   const [importSector, setImportSector] = useState('');
+
+  // Detail dialog state
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    company: '',
+    title: '',
+    status: '',
+    qualificationScore: 0,
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Pagination & sorting state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [totalItems, setTotalItems] = useState(0);
 
   const [formData, setFormData] = useState({
     campaignId: '',
@@ -91,25 +136,34 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads();
+  }, [leadSourceFilter, page, pageSize, sortBy, sortOrder]);
+
+  useEffect(() => {
     fetchCampaigns();
     fetchClients();
   }, []);
-
-  useEffect(() => {
-    fetchLeads();
-  }, [leadSourceFilter]);
 
   const fetchLeads = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (leadSourceFilter) params.append('leadSource', leadSourceFilter);
+      params.append('page', page.toString());
+      params.append('pageSize', pageSize.toString());
+      params.append('sortBy', sortBy);
+      params.append('sortOrder', sortOrder);
 
       const url = `/api/leads${params.toString() ? `?${params.toString()}` : ''}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch leads');
-      const data = await response.json();
-      setLeads(data);
+      const json = await response.json();
+      if (json.pagination) {
+        setLeads(json.data);
+        setTotalItems(json.pagination.totalItems);
+      } else {
+        setLeads(Array.isArray(json) ? json : []);
+        setTotalItems(Array.isArray(json) ? json.length : 0);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -122,7 +176,7 @@ export default function LeadsPage() {
       const response = await fetch('/api/campaigns');
       if (!response.ok) throw new Error('Failed to fetch campaigns');
       const data = await response.json();
-      setCampaigns(data);
+      setCampaigns(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching campaigns:', err);
     }
@@ -133,9 +187,122 @@ export default function LeadsPage() {
       const response = await fetch('/api/clients');
       if (!response.ok) throw new Error('Failed to fetch clients');
       const data = await response.json();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       console.error('Error fetching clients:', err);
+    }
+  };
+
+  const handleSort = (col: string) => {
+    const newOrder = sortBy === col && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(col);
+    setSortOrder(newOrder);
+  };
+
+  const handleDeleteLead = async (leadId: string, leadName: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Lead',
+      message: `Are you sure you want to delete "${leadName}"? This action cannot be undone.`,
+      severity: 'error',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete lead');
+
+      toast.showSuccess(`Lead "${leadName}" deleted successfully`);
+      fetchLeads();
+    } catch (err: any) {
+      toast.showError(err.message || 'Failed to delete lead');
+    }
+  };
+
+  const handleRowClick = (lead: Lead) => {
+    setSelectedLead(lead);
+    setEditMode(false);
+    setDetailDialogOpen(true);
+  };
+
+  const handleCloseDetailDialog = () => {
+    setDetailDialogOpen(false);
+    setEditMode(false);
+    setSelectedLead(null);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedLead) return;
+    setEditFormData({
+      fullName: selectedLead.fullName || '',
+      email: selectedLead.email || '',
+      phone: selectedLead.phone || '',
+      company: selectedLead.company || '',
+      title: selectedLead.title || '',
+      status: selectedLead.status || '',
+      qualificationScore: selectedLead.qualificationScore || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedLead) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/leads/${selectedLead.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      if (!response.ok) throw new Error('Failed to update lead');
+      const updatedLead = await response.json();
+      // Update the selected lead with new data while preserving relation fields
+      setSelectedLead({
+        ...selectedLead,
+        ...updatedLead,
+        campaign: selectedLead.campaign,
+        client: selectedLead.client,
+        _count: selectedLead._count,
+      });
+      setEditMode(false);
+      toast.showSuccess(`Lead "${editFormData.fullName}" updated successfully`);
+      fetchLeads();
+    } catch (err: any) {
+      toast.showError(err.message || 'Failed to update lead');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteFromDetail = async () => {
+    if (!selectedLead) return;
+    const confirmed = await confirm({
+      title: 'Delete Lead',
+      message: `Are you sure you want to delete "${selectedLead.fullName}"? This action cannot be undone.`,
+      severity: 'error',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+    try {
+      const response = await fetch(`/api/leads/${selectedLead.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete lead');
+      toast.showSuccess(`Lead "${selectedLead.fullName}" deleted successfully`);
+      handleCloseDetailDialog();
+      fetchLeads();
+    } catch (err: any) {
+      toast.showError(err.message || 'Failed to delete lead');
     }
   };
 
@@ -244,8 +411,10 @@ export default function LeadsPage() {
       setImportCount(10);
       fetchLeads();
 
-      // Show success message with counts
-      alert(`Successfully imported seed data!\n\nClients: ${result.created.clients}\nCampaigns: ${result.created.campaigns}\nLeads: ${result.created.leads}\nContacts: ${result.created.contacts}\nOpportunities: ${result.created.opportunities}\nTasks: ${result.created.tasks}\nProducts: ${result.created.products}\nActivities: ${result.created.activities}\nEmails: ${result.created.emails}\nWorkflows: ${result.created.workflows}`);
+      // Show success message with counts using toast
+      toast.showSuccess(
+        `Successfully imported seed data! Clients: ${result.created.clients}, Campaigns: ${result.created.campaigns}, Leads: ${result.created.leads}, Contacts: ${result.created.contacts}, Opportunities: ${result.created.opportunities}, Tasks: ${result.created.tasks}, Products: ${result.created.products}, Activities: ${result.created.activities}, Emails: ${result.created.emails}, Workflows: ${result.created.workflows}`
+      );
     } catch (err: any) {
       setError(err.message || 'Failed to import seed data');
     } finally {
@@ -276,11 +445,18 @@ export default function LeadsPage() {
     return 'error';
   };
 
-  if (loading) {
+  if (loading && leads.length === 0) {
     return (
       <DashboardLayout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-          <CircularProgress />
+        <Box>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+            <Typography variant="h4">Leads</Typography>
+          </Box>
+          <Card>
+            <CardContent>
+              <TableSkeleton rows={8} columns={8} />
+            </CardContent>
+          </Card>
         </Box>
       </DashboardLayout>
     );
@@ -564,7 +740,19 @@ Researching online, ready to buy now`
               </Typography>
             )}
           </Box>
-          <Box display="flex" gap={2}>
+          <Box display="flex" gap={2} alignItems="center">
+            <ExportToolbar
+              data={leads.map(l => ({
+                Name: l.fullName,
+                Company: l.company,
+                Email: l.email,
+                Status: l.status,
+                Score: l.qualificationScore,
+                Source: l.leadSource,
+              }))}
+              filename="leads"
+              title="Leads Export"
+            />
             <Button
               variant="outlined"
               startIcon={<CloudUploadIcon />}
@@ -597,6 +785,7 @@ Researching online, ready to buy now`
                 value={leadSourceFilter}
                 onChange={(e) => {
                   setLeadSourceFilter(e.target.value);
+                  setPage(1);
                 }}
                 size="small"
                 sx={{ minWidth: 200 }}
@@ -612,6 +801,7 @@ Researching online, ready to buy now`
                 variant="outlined"
                 onClick={() => {
                   setLeadSourceFilter('');
+                  setPage(1);
                 }}
               >
                 Clear Filters
@@ -624,18 +814,12 @@ Researching online, ready to buy now`
           <CardContent>
             <TableContainer component={Paper} elevation={0}>
               <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Company</TableCell>
-                    <TableCell>Title</TableCell>
-                    <TableCell>Campaign</TableCell>
-                    <TableCell>Source</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Score</TableCell>
-                    <TableCell>Activities</TableCell>
-                  </TableRow>
-                </TableHead>
+                <SortableTableHead
+                  columns={columns}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                />
                 <TableBody>
                   {leads.length === 0 ? (
                     <TableRow>
@@ -651,20 +835,11 @@ Researching online, ready to buy now`
                         key={lead.id}
                         hover
                         sx={{ cursor: 'pointer' }}
-                        onClick={() => router.push(`/leads/${lead.id}`)}
+                        onClick={() => handleRowClick(lead)}
                       >
                         <TableCell>{lead.fullName}</TableCell>
                         <TableCell>{lead.company || '-'}</TableCell>
-                        <TableCell>{lead.title || '-'}</TableCell>
-                        <TableCell>{lead.campaign?.name || '-'}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={lead.leadSource?.replace('_', ' ') || 'AGENCY'}
-                            size="small"
-                            color={lead.leadSource === 'CLIENT_SUBMITTED' ? 'secondary' : 'default'}
-                            variant="outlined"
-                          />
-                        </TableCell>
+                        <TableCell>{lead.email || '-'}</TableCell>
                         <TableCell>
                           <Chip
                             label={lead.status}
@@ -683,13 +858,45 @@ Researching online, ready to buy now`
                             />
                           </Box>
                         </TableCell>
-                        <TableCell>{lead._count.activities}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={lead.leadSource?.replace('_', ' ') || 'AGENCY'}
+                            size="small"
+                            color={lead.leadSource === 'CLIENT_SUBMITTED' ? 'secondary' : 'default'}
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell>{lead.campaign?.name || '-'}</TableCell>
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                            <Typography variant="body2">{lead._count.activities}</Typography>
+                            <Tooltip title="Delete lead">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteLead(lead.id, lead.fullName);
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
                 </TableBody>
               </Table>
             </TableContainer>
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            />
           </CardContent>
         </Card>
 
@@ -985,6 +1192,191 @@ Just paste the text and click "Parse with AI"!`}
             >
               {importing ? 'Generating...' : 'Generate Data'}
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Lead Detail Dialog */}
+        <Dialog open={detailDialogOpen} onClose={handleCloseDetailDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Typography variant="h6">
+                {editMode ? 'Edit Lead' : 'Lead Details'}
+              </Typography>
+              {!editMode && selectedLead && (
+                <Chip
+                  label={selectedLead.status}
+                  size="small"
+                  color={getStatusColor(selectedLead.status) as any}
+                />
+              )}
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            {selectedLead && !editMode && (
+              <Box sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Full Name</Typography>
+                  <Typography variant="body1">{selectedLead.fullName}</Typography>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Email</Typography>
+                  <Typography variant="body1">{selectedLead.email || '-'}</Typography>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Phone</Typography>
+                  <Typography variant="body1">{selectedLead.phone || '-'}</Typography>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Company</Typography>
+                  <Typography variant="body1">{selectedLead.company || '-'}</Typography>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Title</Typography>
+                  <Typography variant="body1">{selectedLead.title || '-'}</Typography>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Status</Typography>
+                  <Box sx={{ mt: 0.5 }}>
+                    <Chip
+                      label={selectedLead.status}
+                      size="small"
+                      color={getStatusColor(selectedLead.status) as any}
+                    />
+                  </Box>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Qualification Score</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                    <Typography variant="body1">{selectedLead.qualificationScore}</Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={selectedLead.qualificationScore}
+                      sx={{ width: 100, height: 8, borderRadius: 4 }}
+                      color={getScoreColor(selectedLead.qualificationScore) as any}
+                    />
+                  </Box>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Lead Source</Typography>
+                  <Box sx={{ mt: 0.5 }}>
+                    <Chip
+                      label={selectedLead.leadSource?.replace('_', ' ') || 'AGENCY'}
+                      size="small"
+                      variant="outlined"
+                    />
+                  </Box>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Campaign</Typography>
+                  <Typography variant="body1">{selectedLead.campaign?.name || '-'}</Typography>
+                </Box>
+                <Divider />
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Client</Typography>
+                  <Typography variant="body1">{selectedLead.client?.name || '-'}</Typography>
+                </Box>
+              </Box>
+            )}
+            {selectedLead && editMode && (
+              <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  label="Full Name"
+                  value={editFormData.fullName}
+                  onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Email"
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  label="Phone"
+                  value={editFormData.phone}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  label="Company"
+                  value={editFormData.company}
+                  onChange={(e) => setEditFormData({ ...editFormData, company: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  label="Title"
+                  value={editFormData.title}
+                  onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                  fullWidth
+                />
+                <TextField
+                  select
+                  label="Status"
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                  fullWidth
+                >
+                  <MenuItem value="NEW">New</MenuItem>
+                  <MenuItem value="CONTACTED">Contacted</MenuItem>
+                  <MenuItem value="QUALIFIED">Qualified</MenuItem>
+                  <MenuItem value="UNQUALIFIED">Unqualified</MenuItem>
+                  <MenuItem value="WON">Won</MenuItem>
+                  <MenuItem value="LOST">Lost</MenuItem>
+                </TextField>
+                <TextField
+                  label="Qualification Score"
+                  type="number"
+                  value={editFormData.qualificationScore}
+                  onChange={(e) => setEditFormData({ ...editFormData, qualificationScore: parseInt(e.target.value) || 0 })}
+                  fullWidth
+                  inputProps={{ min: 0, max: 100 }}
+                />
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {!editMode ? (
+              <>
+                <Button onClick={handleCloseDetailDialog}>Close</Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  onClick={handleDeleteFromDetail}
+                >
+                  Delete
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<EditIcon />}
+                  onClick={handleStartEdit}
+                >
+                  Edit
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={handleCancelEdit} disabled={saving}>Cancel</Button>
+                <Button
+                  variant="contained"
+                  onClick={handleSaveEdit}
+                  disabled={saving || !editFormData.fullName}
+                  startIcon={saving ? <CircularProgress size={20} /> : undefined}
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+              </>
+            )}
           </DialogActions>
         </Dialog>
       </Box>

@@ -18,6 +18,10 @@ export async function GET(req: NextRequest) {
       totalLeads,
       qualifiedLeads,
       wonLeads,
+      openCases,
+      activeContracts,
+      pendingTasks,
+      totalOpportunities,
     ] = await Promise.all([
       prisma.clientCompany.count(),
       prisma.campaign.count(),
@@ -25,6 +29,10 @@ export async function GET(req: NextRequest) {
       prisma.lead.count(),
       prisma.lead.count({ where: { status: 'QUALIFIED' } }),
       prisma.lead.count({ where: { status: 'WON' } }),
+      prisma.case.count({ where: { status: { in: ['NEW', 'OPEN', 'IN_PROGRESS', 'ESCALATED'] } } }),
+      prisma.contract.count({ where: { status: 'ACTIVATED' } }),
+      prisma.task.count({ where: { status: { in: ['NOT_STARTED', 'IN_PROGRESS'] } } }),
+      prisma.opportunity.count({ where: { stage: { notIn: ['CLOSED_WON', 'CLOSED_LOST'] } } }),
     ]);
 
     // Get lead status breakdown
@@ -85,6 +93,10 @@ export async function GET(req: NextRequest) {
       totalLeads,
       qualifiedLeads,
       wonLeads,
+      openCases,
+      activeContracts,
+      pendingTasks,
+      totalOpportunities,
       leadsByStatus: leadsByStatus.reduce((acc, item) => {
         acc[item.status] = item._count;
         return acc;

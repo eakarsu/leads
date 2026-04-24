@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const paginationParams = parsePaginationParams(req);
+
+    const total = await prisma.scheduledReport.count();
+
     const reports = await prisma.scheduledReport.findMany({
       include: {
         _count: {
           select: { executions: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     const stats = {
@@ -19,7 +24,7 @@ export async function GET() {
       totalExecutions: reports.reduce((sum, r) => sum + (r._count?.executions || 0), 0),
     };
 
-    return NextResponse.json({ reports, stats });
+    return NextResponse.json(buildPaginatedResponse(reports, total, paginationParams, { stats }));
   } catch (error) {
     console.error('Error fetching scheduled reports:', error);
     return NextResponse.json({ error: 'Failed to fetch scheduled reports' }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,6 +11,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const assignedTo = searchParams.get('assignedTo');
     const status = searchParams.get('status');
@@ -17,14 +20,18 @@ export async function GET(req: NextRequest) {
     const opportunityId = searchParams.get('opportunityId');
     const contactId = searchParams.get('contactId');
 
+    const where = {
+      ...(assignedTo && { assignedTo }),
+      ...(status && { status: status as any }),
+      ...(priority && { priority: priority as any }),
+      ...(opportunityId && { opportunityId }),
+      ...(contactId && { contactId }),
+    };
+
+    const total = await prisma.task.count({ where });
+
     const tasks = await prisma.task.findMany({
-      where: {
-        ...(assignedTo && { assignedTo }),
-        ...(status && { status: status as any }),
-        ...(priority && { priority: priority as any }),
-        ...(opportunityId && { opportunityId }),
-        ...(contactId && { contactId }),
-      },
+      where,
       include: {
         assignee: {
           select: {
@@ -43,12 +50,10 @@ export async function GET(req: NextRequest) {
         contact: true,
         opportunity: true,
       },
-      orderBy: {
-        dueDate: 'asc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(tasks);
+    return NextResponse.json(buildPaginatedResponse(tasks, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching tasks:', error);
     return NextResponse.json(

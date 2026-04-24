@@ -43,6 +43,8 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import ViewColumnIcon from '@mui/icons-material/ViewColumn';
 import CategoryIcon from '@mui/icons-material/Category';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import ReportChart from '@/components/ReportChart';
+import { getLabelForDbField } from '@/lib/reportFieldMapping';
 
 // Builder Report interface
 interface BuilderReport {
@@ -601,6 +603,24 @@ export default function ReportDetailPage() {
             </Grid>
           </CardContent>
         </Card>
+
+        {/* Chart Visualizations for Summary/Matrix reports */}
+        {(builderReport.reportType === 'SUMMARY' || builderReport.reportType === 'MATRIX') &&
+          reportData.length > 0 &&
+          Array.isArray(builderReport.groupings) &&
+          builderReport.groupings.length > 0 && (
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>Charts</Typography>
+              <ReportChart
+                data={reportData}
+                reportType={builderReport.reportType as 'SUMMARY' | 'MATRIX'}
+                groupings={builderReport.groupings}
+                columns={Array.isArray(builderReport.columns) ? builderReport.columns : []}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Report Results */}
         <Card>

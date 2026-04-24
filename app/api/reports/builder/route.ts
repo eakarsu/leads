@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    return NextResponse.json({ reports: transformedReports, stats });
+    return NextResponse.json({ data: transformedReports, stats, pagination: { page: 1, pageSize: transformedReports.length, totalItems: transformedReports.length, totalPages: 1 } });
   } catch (error: any) {
     console.error('Error fetching reports:', error);
     return NextResponse.json({ error: 'Failed to fetch reports' }, { status: 500 });

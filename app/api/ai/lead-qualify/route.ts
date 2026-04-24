@@ -120,13 +120,8 @@ Format your response as JSON with the following structure:
       const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : aiResponse;
       parsedResponse = JSON.parse(jsonStr);
     } catch (parseError) {
-      // If parsing fails, return raw response
-      console.warn('Failed to parse AI response as JSON:', parseError);
-      parsedResponse = {
-        qualificationScore: 50,
-        fitSummary: aiResponse.substring(0, 300),
-        nextBestAction: 'Review the AI assessment and determine next steps',
-      };
+      console.error('Failed to parse AI response as JSON:', parseError);
+      throw new Error('AI returned invalid JSON response for lead qualification');
     }
 
     return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,17 +11,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get('clientId');
     const status = searchParams.get('status');
     const channel = searchParams.get('channel');
 
+    const where = {
+      ...(clientId && { clientId }),
+      ...(status && { status: status as any }),
+      ...(channel && { channel: channel as any }),
+    };
+
+    const total = await prisma.campaign.count({ where });
+
     const campaigns = await prisma.campaign.findMany({
-      where: {
-        ...(clientId && { clientId }),
-        ...(status && { status: status as any }),
-        ...(channel && { channel: channel as any }),
-      },
+      where,
       include: {
         client: true,
         owner: {
@@ -36,12 +43,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(campaigns);
+    return NextResponse.json(buildPaginatedResponse(campaigns, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching campaigns:', error);
     return NextResponse.json(

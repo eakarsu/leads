@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import ExportToolbar from '@/components/ExportToolbar';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Box,
   Typography,
@@ -16,7 +20,6 @@ import {
   Tab,
   IconButton,
   Chip,
-  Divider,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -25,7 +28,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  CircularProgress,
   InputAdornment,
   Tooltip,
   Grid,
@@ -62,6 +64,9 @@ import {
   Visibility as VisibilityIcon,
   Category as CategoryIcon,
   Email as EmailIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Save as SaveIcon,
 } from '@mui/icons-material';
 
 interface FeedItem {
@@ -129,6 +134,9 @@ export default function ChatterPage() {
   const [selectedPost, setSelectedPost] = useState<FeedItem | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<ChatterGroup | null>(null);
 
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirmDialog();
+
   const [postFormData, setPostFormData] = useState({
     bodyText: '',
     linkUrl: '',
@@ -144,6 +152,16 @@ export default function ChatterPage() {
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   const [detailCommentText, setDetailCommentText] = useState('');
 
+  // Edit mode state for posts
+  const [postEditMode, setPostEditMode] = useState(false);
+  const [postEditFormData, setPostEditFormData] = useState({ body: '' });
+  const [postEditSaving, setPostEditSaving] = useState(false);
+
+  // Edit mode state for groups
+  const [groupEditMode, setGroupEditMode] = useState(false);
+  const [groupEditFormData, setGroupEditFormData] = useState({ name: '', description: '' });
+  const [groupEditSaving, setGroupEditSaving] = useState(false);
+
   useEffect(() => {
     fetchFeed();
     fetchGroups();
@@ -156,6 +174,7 @@ export default function ChatterPage() {
       setFeedItems(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching feed:', error);
+      showError('Failed to load feed');
     } finally {
       setLoading(false);
     }
@@ -168,6 +187,7 @@ export default function ChatterPage() {
       setGroups(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching groups:', error);
+      showError('Failed to load groups');
     }
   };
 
@@ -187,9 +207,13 @@ export default function ChatterPage() {
         setShowPostModal(false);
         setPostFormData({ bodyText: '', linkUrl: '', linkTitle: '' });
         fetchFeed();
+        showSuccess('Post created successfully');
+      } else {
+        showError('Failed to create post');
       }
     } catch (error) {
       console.error('Error creating post:', error);
+      showError('Failed to create post');
     }
   };
 
@@ -206,9 +230,13 @@ export default function ChatterPage() {
         setShowGroupModal(false);
         setGroupFormData({ name: '', description: '', type: 'PUBLIC' });
         fetchGroups();
+        showSuccess('Group created successfully');
+      } else {
+        showError('Failed to create group');
       }
     } catch (error) {
       console.error('Error creating group:', error);
+      showError('Failed to create group');
     }
   };
 
@@ -223,6 +251,7 @@ export default function ChatterPage() {
       fetchFeed();
     } catch (error) {
       console.error('Error liking post:', error);
+      showError('Failed to like post');
     }
   };
 
@@ -242,8 +271,107 @@ export default function ChatterPage() {
         setCommentText({ ...commentText, [feedItemId]: '' });
       }
       fetchFeed();
+      showSuccess('Comment added');
     } catch (error) {
       console.error('Error commenting:', error);
+      showError('Failed to add comment');
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Post',
+      message: 'Are you sure you want to delete this post? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    try {
+      await fetch(`/api/feed?id=${postId}`, { method: 'DELETE' });
+      fetchFeed();
+      setSelectedPost(null);
+      showSuccess('Post deleted successfully');
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      showError('Failed to delete post');
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    const confirmed = await confirm({
+      title: 'Delete Group',
+      message: 'Are you sure you want to delete this group? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    try {
+      await fetch(`/api/chatter-groups?id=${groupId}`, { method: 'DELETE' });
+      fetchGroups();
+      setSelectedGroup(null);
+      showSuccess('Group deleted successfully');
+    } catch (error) {
+      console.error('Error deleting group:', error);
+      showError('Failed to delete group');
+    }
+  };
+
+  // Post edit handlers
+  const handleStartPostEdit = () => {
+    if (!selectedPost) return;
+    setPostEditFormData({ body: selectedPost.body });
+    setPostEditMode(true);
+  };
+
+  const handleSavePostEdit = async () => {
+    if (!selectedPost) return;
+    setPostEditSaving(true);
+    try {
+      const res = await fetch('/api/feed', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'edit', feedItemId: selectedPost.id, body: postEditFormData.body }),
+      });
+      if (!res.ok) throw new Error('Failed to update post');
+      showSuccess('Post updated successfully');
+      setPostEditMode(false);
+      fetchFeed();
+    } catch (error: any) {
+      showError(error.message || 'Failed to update post');
+    } finally {
+      setPostEditSaving(false);
+    }
+  };
+
+  // Group edit handlers
+  const handleStartGroupEdit = () => {
+    if (!selectedGroup) return;
+    setGroupEditFormData({
+      name: selectedGroup.name,
+      description: selectedGroup.description || '',
+    });
+    setGroupEditMode(true);
+  };
+
+  const handleSaveGroupEdit = async () => {
+    if (!selectedGroup) return;
+    setGroupEditSaving(true);
+    try {
+      const res = await fetch('/api/chatter-groups', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: selectedGroup.id, action: 'edit', ...groupEditFormData }),
+      });
+      if (!res.ok) throw new Error('Failed to update group');
+      showSuccess('Group updated successfully');
+      setGroupEditMode(false);
+      fetchGroups();
+    } catch (error: any) {
+      showError(error.message || 'Failed to update group');
+    } finally {
+      setGroupEditSaving(false);
     }
   };
 
@@ -256,8 +384,10 @@ export default function ChatterPage() {
         body: JSON.stringify({ groupId, action: 'join' }),
       });
       fetchGroups();
+      showSuccess('Joined group successfully');
     } catch (error) {
       console.error('Error joining group:', error);
+      showError('Failed to join group');
     }
   };
 
@@ -270,8 +400,10 @@ export default function ChatterPage() {
         body: JSON.stringify({ groupId, action: 'leave' }),
       });
       fetchGroups();
+      showSuccess('Left group successfully');
     } catch (error) {
       console.error('Error leaving group:', error);
+      showError('Failed to leave group');
     }
   };
 
@@ -353,6 +485,24 @@ export default function ChatterPage() {
   const totalLikes = feedItems.reduce((sum, item) => sum + (item.likeCount || 0), 0);
   const totalGroups = groups.length;
 
+  // Export data
+  const feedExportData = feedItems.map(item => ({
+    Author: item.author?.name || 'Unknown',
+    Type: item.type,
+    Body: item.body.substring(0, 100),
+    Likes: item.likeCount,
+    Comments: item.commentCount,
+    Created: new Date(item.createdAt).toLocaleString(),
+  }));
+
+  const groupExportData = groups.map(group => ({
+    Name: group.name,
+    Description: group.description || '',
+    Visibility: group.isPublic ? 'Public' : 'Private',
+    Members: group.memberCount || group._count.members,
+    Owner: group.owner?.name || 'Unknown',
+  }));
+
   // Update selectedPost when feedItems change
   useEffect(() => {
     if (selectedPost) {
@@ -375,6 +525,11 @@ export default function ChatterPage() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar
+              data={activeTab === 0 ? feedExportData : groupExportData}
+              filename={activeTab === 0 ? 'chatter-feed' : 'chatter-groups'}
+              title={activeTab === 0 ? 'Chatter Feed' : 'Chatter Groups'}
+            />
             {activeTab === 1 && (
               <Button
                 variant="outlined"
@@ -450,10 +605,7 @@ export default function ChatterPage() {
         {activeTab === 0 && (
           <Box sx={{ maxWidth: 800, mx: 'auto' }}>
             {loading ? (
-              <Paper sx={{ p: 4, textAlign: 'center' }}>
-                <CircularProgress />
-                <Typography sx={{ mt: 2 }} color="text.secondary">Loading feed...</Typography>
-              </Paper>
+              <TableSkeleton rows={5} columns={4} />
             ) : feedItems.length === 0 ? (
               <Paper sx={{ p: 4, textAlign: 'center' }}>
                 <ForumIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
@@ -478,10 +630,10 @@ export default function ChatterPage() {
                   sx={{
                     mb: 2,
                     cursor: 'pointer',
-                    '&:hover': { boxShadow: 4 },
-                    transition: 'box-shadow 0.2s'
+                    '&:hover': { boxShadow: 4, bgcolor: 'action.hover' },
+                    transition: 'box-shadow 0.2s, background-color 0.2s'
                   }}
-                  onClick={() => setSelectedPost(item)}
+                  onClick={() => { setSelectedPost(item); setPostEditMode(false); }}
                 >
                   {/* Post Header */}
                   <CardContent sx={{ pb: 1 }}>
@@ -582,7 +734,9 @@ export default function ChatterPage() {
         {/* Groups Tab */}
         {activeTab === 1 && (
           <Box>
-            {groups.length === 0 ? (
+            {loading ? (
+              <TableSkeleton rows={4} columns={5} />
+            ) : groups.length === 0 ? (
               <Paper sx={{ p: 4, textAlign: 'center' }}>
                 <GroupIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
                 <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -609,10 +763,10 @@ export default function ChatterPage() {
                         display: 'flex',
                         flexDirection: 'column',
                         cursor: 'pointer',
-                        '&:hover': { boxShadow: 4 },
-                        transition: 'box-shadow 0.2s'
+                        '&:hover': { boxShadow: 4, bgcolor: 'action.hover' },
+                        transition: 'box-shadow 0.2s, background-color 0.2s'
                       }}
-                      onClick={() => setSelectedGroup(group)}
+                      onClick={() => { setSelectedGroup(group); setGroupEditMode(false); }}
                     >
                       <CardContent sx={{ flex: 1 }}>
                         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
@@ -699,7 +853,7 @@ export default function ChatterPage() {
         {/* Post Detail Dialog */}
         <Dialog
           open={!!selectedPost}
-          onClose={() => setSelectedPost(null)}
+          onClose={() => { setSelectedPost(null); setPostEditMode(false); }}
           maxWidth="md"
           fullWidth
         >
@@ -719,174 +873,215 @@ export default function ChatterPage() {
                     </Avatar>
                     <Box>
                       <Typography variant="h6">
-                        {selectedPost.author?.name || 'Unknown User'}
+                        {postEditMode ? 'Edit Post' : (selectedPost.author?.name || 'Unknown User')}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {formatDateTime(selectedPost.createdAt)}
                       </Typography>
                     </Box>
                   </Box>
-                  <IconButton onClick={() => setSelectedPost(null)}>
+                  <IconButton onClick={() => { setSelectedPost(null); setPostEditMode(false); }}>
                     <CloseIcon />
                   </IconButton>
                 </Box>
               </DialogTitle>
               <DialogContent dividers>
-                {/* Post Details */}
-                <Box sx={{ mb: 3 }}>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-                    {getPostTypeChip(selectedPost.type)}
-                    <Chip
-                      icon={<VisibilityIcon />}
-                      label={selectedPost.visibility || 'ALL_USERS'}
-                      size="small"
-                      variant="outlined"
+                {/* View Mode */}
+                {!postEditMode && (
+                  <Box sx={{ mb: 3 }}>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                      {getPostTypeChip(selectedPost.type)}
+                      <Chip
+                        icon={<VisibilityIcon />}
+                        label={selectedPost.visibility || 'ALL_USERS'}
+                        size="small"
+                        variant="outlined"
+                      />
+                    </Box>
+
+                    <Typography sx={{ whiteSpace: 'pre-wrap', mb: 2 }}>
+                      {selectedPost.body}
+                    </Typography>
+
+                    {selectedPost.linkUrl && (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 2,
+                          mb: 2,
+                          bgcolor: 'action.hover',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => window.open(selectedPost.linkUrl!, '_blank')}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <LinkIcon color="primary" />
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle2" color="primary">
+                              {selectedPost.linkTitle || 'View Link'}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {selectedPost.linkUrl}
+                            </Typography>
+                          </Box>
+                          <OpenInNewIcon fontSize="small" color="action" />
+                        </Box>
+                      </Paper>
+                    )}
+
+                    {/* Post Info Table */}
+                    <Paper variant="outlined" sx={{ mb: 3 }}>
+                      <Table size="small">
+                        <TableBody>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold', width: 150 }}>Post ID</TableCell>
+                            <TableCell>{selectedPost.id}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Author Email</TableCell>
+                            <TableCell>{selectedPost.author?.email || 'N/A'}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
+                            <TableCell>{formatDateTime(selectedPost.createdAt)}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Likes</TableCell>
+                            <TableCell>{selectedPost.likeCount}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>Comments</TableCell>
+                            <TableCell>{selectedPost.commentCount}</TableCell>
+                          </TableRow>
+                          {selectedPost.parentType && (
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 'bold' }}>Posted In</TableCell>
+                              <TableCell>{selectedPost.parentType}: {selectedPost.parentId}</TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </Paper>
+
+                    {/* Actions */}
+                    <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+                      <Button
+                        variant={selectedPost.likeCount > 0 ? 'contained' : 'outlined'}
+                        startIcon={<ThumbUpIcon />}
+                        onClick={() => handleLike(selectedPost.id)}
+                      >
+                        {selectedPost.likeCount} Like{selectedPost.likeCount !== 1 ? 's' : ''}
+                      </Button>
+                    </Box>
+
+                    {/* Comments Section */}
+                    <Typography variant="h6" gutterBottom>
+                      Comments ({selectedPost.commentCount})
+                    </Typography>
+
+                    {selectedPost.comments && selectedPost.comments.length > 0 ? (
+                      <List sx={{ bgcolor: 'action.hover', borderRadius: 1, mb: 2 }}>
+                        {selectedPost.comments.map((comment) => (
+                          <ListItem key={comment.id} alignItems="flex-start">
+                            <ListItemAvatar>
+                              <Avatar
+                                sx={{
+                                  bgcolor: getAvatarColor(comment.author?.name),
+                                  width: 36,
+                                  height: 36,
+                                }}
+                              >
+                                {getInitials(comment.author?.name)}
+                              </Avatar>
+                            </ListItemAvatar>
+                            <ListItemText
+                              primary={
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography fontWeight="bold" variant="body2">
+                                    {comment.author?.name || 'Unknown'}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {formatTimeAgo(comment.createdAt)}
+                                  </Typography>
+                                </Box>
+                              }
+                              secondary={comment.body}
+                            />
+                          </ListItem>
+                        ))}
+                      </List>
+                    ) : (
+                      <Typography color="text.secondary" sx={{ mb: 2 }}>
+                        No comments yet. Be the first to comment!
+                      </Typography>
+                    )}
+
+                    {/* Add Comment */}
+                    <TextField
+                      fullWidth
+                      multiline
+                      rows={2}
+                      placeholder="Write a comment..."
+                      value={detailCommentText}
+                      onChange={(e) => setDetailCommentText(e.target.value)}
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              color="primary"
+                              onClick={() => handleComment(selectedPost.id, true)}
+                              disabled={!detailCommentText.trim()}
+                            >
+                              <SendIcon />
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
                     />
                   </Box>
+                )}
 
-                  <Typography sx={{ whiteSpace: 'pre-wrap', mb: 2 }}>
-                    {selectedPost.body}
-                  </Typography>
-
-                  {selectedPost.linkUrl && (
-                    <Paper
-                      variant="outlined"
-                      sx={{
-                        p: 2,
-                        mb: 2,
-                        bgcolor: 'action.hover',
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => window.open(selectedPost.linkUrl!, '_blank')}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <LinkIcon color="primary" />
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="subtitle2" color="primary">
-                            {selectedPost.linkTitle || 'View Link'}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {selectedPost.linkUrl}
-                          </Typography>
-                        </Box>
-                        <OpenInNewIcon fontSize="small" color="action" />
-                      </Box>
-                    </Paper>
-                  )}
-
-                  {/* Post Info Table */}
-                  <Paper variant="outlined" sx={{ mb: 3 }}>
-                    <Table size="small">
-                      <TableBody>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold', width: 150 }}>Post ID</TableCell>
-                          <TableCell>{selectedPost.id}</TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold' }}>Author Email</TableCell>
-                          <TableCell>{selectedPost.author?.email || 'N/A'}</TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
-                          <TableCell>{formatDateTime(selectedPost.createdAt)}</TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold' }}>Likes</TableCell>
-                          <TableCell>{selectedPost.likeCount}</TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold' }}>Comments</TableCell>
-                          <TableCell>{selectedPost.commentCount}</TableCell>
-                        </TableRow>
-                        {selectedPost.parentType && (
-                          <TableRow>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Posted In</TableCell>
-                            <TableCell>{selectedPost.parentType}: {selectedPost.parentId}</TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </Paper>
-
-                  {/* Actions */}
-                  <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-                    <Button
-                      variant={selectedPost.likeCount > 0 ? 'contained' : 'outlined'}
-                      startIcon={<ThumbUpIcon />}
-                      onClick={() => handleLike(selectedPost.id)}
-                    >
-                      {selectedPost.likeCount} Like{selectedPost.likeCount !== 1 ? 's' : ''}
-                    </Button>
+                {/* Edit Mode */}
+                {postEditMode && (
+                  <Box>
+                    <TextField
+                      label="Post Content"
+                      value={postEditFormData.body}
+                      onChange={(e) => setPostEditFormData({ ...postEditFormData, body: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      multiline
+                      rows={4}
+                    />
                   </Box>
-
-                  {/* Comments Section */}
-                  <Typography variant="h6" gutterBottom>
-                    Comments ({selectedPost.commentCount})
-                  </Typography>
-
-                  {selectedPost.comments && selectedPost.comments.length > 0 ? (
-                    <List sx={{ bgcolor: 'action.hover', borderRadius: 1, mb: 2 }}>
-                      {selectedPost.comments.map((comment) => (
-                        <ListItem key={comment.id} alignItems="flex-start">
-                          <ListItemAvatar>
-                            <Avatar
-                              sx={{
-                                bgcolor: getAvatarColor(comment.author?.name),
-                                width: 36,
-                                height: 36,
-                              }}
-                            >
-                              {getInitials(comment.author?.name)}
-                            </Avatar>
-                          </ListItemAvatar>
-                          <ListItemText
-                            primary={
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography fontWeight="bold" variant="body2">
-                                  {comment.author?.name || 'Unknown'}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {formatTimeAgo(comment.createdAt)}
-                                </Typography>
-                              </Box>
-                            }
-                            secondary={comment.body}
-                          />
-                        </ListItem>
-                      ))}
-                    </List>
-                  ) : (
-                    <Typography color="text.secondary" sx={{ mb: 2 }}>
-                      No comments yet. Be the first to comment!
-                    </Typography>
-                  )}
-
-                  {/* Add Comment */}
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={2}
-                    placeholder="Write a comment..."
-                    value={detailCommentText}
-                    onChange={(e) => setDetailCommentText(e.target.value)}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            color="primary"
-                            onClick={() => handleComment(selectedPost.id, true)}
-                            disabled={!detailCommentText.trim()}
-                          >
-                            <SendIcon />
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Box>
+                )}
               </DialogContent>
               <DialogActions sx={{ px: 3, py: 2 }}>
-                <Button onClick={() => setSelectedPost(null)}>Close</Button>
+                {!postEditMode ? (
+                  <>
+                    <Button
+                      startIcon={<EditIcon />}
+                      onClick={handleStartPostEdit}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDeletePost(selectedPost.id)}
+                    >
+                      Delete
+                    </Button>
+                    <Button onClick={() => { setSelectedPost(null); setPostEditMode(false); }}>Close</Button>
+                  </>
+                ) : (
+                  <>
+                    <Button onClick={() => setPostEditMode(false)} startIcon={<CloseIcon />}>Cancel</Button>
+                    <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSavePostEdit} disabled={postEditSaving}>
+                      {postEditSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                  </>
+                )}
               </DialogActions>
             </>
           )}
@@ -895,7 +1090,7 @@ export default function ChatterPage() {
         {/* Group Detail Dialog */}
         <Dialog
           open={!!selectedGroup}
-          onClose={() => setSelectedGroup(null)}
+          onClose={() => { setSelectedGroup(null); setGroupEditMode(false); }}
           maxWidth="sm"
           fullWidth
         >
@@ -914,123 +1109,178 @@ export default function ChatterPage() {
                       {selectedGroup.isPublic ? <PublicIcon /> : <PrivateIcon />}
                     </Avatar>
                     <Box>
-                      <Typography variant="h6">{selectedGroup.name}</Typography>
-                      <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
-                        <Chip
-                          icon={selectedGroup.isPublic ? <PublicIcon /> : <PrivateIcon />}
-                          label={selectedGroup.isPublic ? 'Public' : 'Private'}
-                          size="small"
-                          color={selectedGroup.isPublic ? 'success' : 'default'}
-                        />
-                        {selectedGroup.isMember && (
-                          <Chip label="Member" size="small" color="primary" />
-                        )}
-                      </Box>
+                      <Typography variant="h6">
+                        {groupEditMode ? 'Edit Group' : selectedGroup.name}
+                      </Typography>
+                      {!groupEditMode && (
+                        <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                          <Chip
+                            icon={selectedGroup.isPublic ? <PublicIcon /> : <PrivateIcon />}
+                            label={selectedGroup.isPublic ? 'Public' : 'Private'}
+                            size="small"
+                            color={selectedGroup.isPublic ? 'success' : 'default'}
+                          />
+                          {selectedGroup.isMember && (
+                            <Chip label="Member" size="small" color="primary" />
+                          )}
+                        </Box>
+                      )}
                     </Box>
                   </Box>
-                  <IconButton onClick={() => setSelectedGroup(null)}>
+                  <IconButton onClick={() => { setSelectedGroup(null); setGroupEditMode(false); }}>
                     <CloseIcon />
                   </IconButton>
                 </Box>
               </DialogTitle>
               <DialogContent dividers>
-                {/* Description */}
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Description
-                </Typography>
-                <Typography sx={{ mb: 3 }}>
-                  {selectedGroup.description || 'No description provided'}
-                </Typography>
+                {/* View Mode */}
+                {!groupEditMode && (
+                  <>
+                    {/* Description */}
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Description
+                    </Typography>
+                    <Typography sx={{ mb: 3 }}>
+                      {selectedGroup.description || 'No description provided'}
+                    </Typography>
 
-                {/* Group Info Table */}
-                <Paper variant="outlined">
-                  <Table size="small">
-                    <TableBody>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold', width: 150 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CategoryIcon fontSize="small" />
-                            Group ID
-                          </Box>
-                        </TableCell>
-                        <TableCell>{selectedGroup.id}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <PersonIcon fontSize="small" />
-                            Owner
-                          </Box>
-                        </TableCell>
-                        <TableCell>{selectedGroup.owner?.name || 'Unknown'}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <EmailIcon fontSize="small" />
-                            Owner Email
-                          </Box>
-                        </TableCell>
-                        <TableCell>{selectedGroup.owner?.email || 'N/A'}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <GroupIcon fontSize="small" />
-                            Members
-                          </Box>
-                        </TableCell>
-                        <TableCell>{selectedGroup.memberCount || selectedGroup._count.members}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <VisibilityIcon fontSize="small" />
-                            Visibility
-                          </Box>
-                        </TableCell>
-                        <TableCell>{selectedGroup.isPublic ? 'Public - Anyone can join' : 'Private - Requires approval'}</TableCell>
-                      </TableRow>
-                      {selectedGroup.createdAt && (
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 'bold' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <ScheduleIcon fontSize="small" />
-                              Created
-                            </Box>
-                          </TableCell>
-                          <TableCell>{formatDateTime(selectedGroup.createdAt)}</TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </Paper>
+                    {/* Group Info Table */}
+                    <Paper variant="outlined">
+                      <Table size="small">
+                        <TableBody>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold', width: 150 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <CategoryIcon fontSize="small" />
+                                Group ID
+                              </Box>
+                            </TableCell>
+                            <TableCell>{selectedGroup.id}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <PersonIcon fontSize="small" />
+                                Owner
+                              </Box>
+                            </TableCell>
+                            <TableCell>{selectedGroup.owner?.name || 'Unknown'}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <EmailIcon fontSize="small" />
+                                Owner Email
+                              </Box>
+                            </TableCell>
+                            <TableCell>{selectedGroup.owner?.email || 'N/A'}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <GroupIcon fontSize="small" />
+                                Members
+                              </Box>
+                            </TableCell>
+                            <TableCell>{selectedGroup.memberCount || selectedGroup._count.members}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 'bold' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <VisibilityIcon fontSize="small" />
+                                Visibility
+                              </Box>
+                            </TableCell>
+                            <TableCell>{selectedGroup.isPublic ? 'Public - Anyone can join' : 'Private - Requires approval'}</TableCell>
+                          </TableRow>
+                          {selectedGroup.createdAt && (
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 'bold' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <ScheduleIcon fontSize="small" />
+                                  Created
+                                </Box>
+                              </TableCell>
+                              <TableCell>{formatDateTime(selectedGroup.createdAt)}</TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </Paper>
+                  </>
+                )}
+
+                {/* Edit Mode */}
+                {groupEditMode && (
+                  <Box>
+                    <TextField
+                      label="Group Name"
+                      value={groupEditFormData.name}
+                      onChange={(e) => setGroupEditFormData({ ...groupEditFormData, name: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                    />
+                    <TextField
+                      label="Description"
+                      value={groupEditFormData.description}
+                      onChange={(e) => setGroupEditFormData({ ...groupEditFormData, description: e.target.value })}
+                      fullWidth
+                      margin="normal"
+                      multiline
+                      rows={3}
+                    />
+                  </Box>
+                )}
               </DialogContent>
               <DialogActions sx={{ px: 3, py: 2 }}>
-                {selectedGroup.isMember ? (
-                  <Button
-                    color="inherit"
-                    startIcon={<LeaveIcon />}
-                    onClick={(e) => {
-                      handleLeaveGroup(selectedGroup.id, e);
-                      setSelectedGroup(null);
-                    }}
-                  >
-                    Leave Group
-                  </Button>
+                {!groupEditMode ? (
+                  <>
+                    {selectedGroup.isMember ? (
+                      <Button
+                        color="inherit"
+                        startIcon={<LeaveIcon />}
+                        onClick={(e) => {
+                          handleLeaveGroup(selectedGroup.id, e);
+                          setSelectedGroup(null);
+                        }}
+                      >
+                        Leave Group
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="contained"
+                        startIcon={<JoinIcon />}
+                        onClick={(e) => {
+                          handleJoinGroup(selectedGroup.id, e);
+                          setSelectedGroup(null);
+                        }}
+                      >
+                        Join Group
+                      </Button>
+                    )}
+                    <Button
+                      startIcon={<EditIcon />}
+                      onClick={handleStartGroupEdit}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDeleteGroup(selectedGroup.id)}
+                    >
+                      Delete
+                    </Button>
+                    <Button onClick={() => { setSelectedGroup(null); setGroupEditMode(false); }}>Close</Button>
+                  </>
                 ) : (
-                  <Button
-                    variant="contained"
-                    startIcon={<JoinIcon />}
-                    onClick={(e) => {
-                      handleJoinGroup(selectedGroup.id, e);
-                      setSelectedGroup(null);
-                    }}
-                  >
-                    Join Group
-                  </Button>
+                  <>
+                    <Button onClick={() => setGroupEditMode(false)} startIcon={<CloseIcon />}>Cancel</Button>
+                    <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveGroupEdit} disabled={groupEditSaving}>
+                      {groupEditSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                  </>
                 )}
-                <Button onClick={() => setSelectedGroup(null)}>Close</Button>
               </DialogActions>
             </>
           )}

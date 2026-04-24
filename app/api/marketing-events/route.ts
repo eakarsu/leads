@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const paginationParams = parsePaginationParams(req);
+
+    const total = await prisma.marketingEvent.count();
+
     const events = await prisma.marketingEvent.findMany({
       include: {
         _count: {
           select: { registrations: true, sessions: true },
         },
       },
-      orderBy: { startDateTime: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     const now = new Date();
@@ -20,7 +25,7 @@ export async function GET() {
       totalRegistrations: events.reduce((sum, e) => sum + e.currentAttendees, 0),
     };
 
-    return NextResponse.json({ events, stats });
+    return NextResponse.json(buildPaginatedResponse(events, total, paginationParams, { stats }));
   } catch (error) {
     console.error('Error fetching marketing events:', error);
     return NextResponse.json({ error: 'Failed to fetch marketing events' }, { status: 500 });

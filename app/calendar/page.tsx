@@ -39,6 +39,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RepeatIcon from '@mui/icons-material/Repeat';
@@ -47,6 +48,10 @@ import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
 import CloseIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import ExportToolbar from '@/components/ExportToolbar';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface CalendarEvent {
   id: string;
@@ -58,6 +63,7 @@ interface CalendarEvent {
   isAllDay: boolean;
   isPrivate: boolean;
   recurrenceRule: string | null;
+  status: string;
   ownerId: string;
   attendees: any[];
 }
@@ -77,6 +83,21 @@ export default function CalendarPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    subject: '',
+    description: '',
+    location: '',
+    startDateTime: '',
+    endDateTime: '',
+    isAllDay: false,
+    isPrivate: false,
+    status: 'CONFIRMED',
+  });
+
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirmDialog();
+
   const [formData, setFormData] = useState({
     subject: '',
     description: '',
@@ -110,6 +131,7 @@ export default function CalendarPage() {
       setStats(data.stats || {});
     } catch (error) {
       console.error('Error fetching events:', error);
+      showError('Failed to load calendar events');
     } finally {
       setLoading(false);
     }
@@ -131,22 +153,90 @@ export default function CalendarPage() {
         setDialogOpen(false);
         fetchEvents();
         resetForm();
+        showSuccess('Event created successfully');
+      } else {
+        showError('Failed to create event');
       }
     } catch (error) {
       console.error('Error creating event:', error);
+      showError('Failed to create event');
     }
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (!confirm('Are you sure you want to delete this event?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this calendar event?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/calendar?id=${eventId}`, { method: 'DELETE' });
       setDetailDialogOpen(false);
       setSelectedEvent(null);
       fetchEvents();
+      showSuccess('Event deleted successfully');
     } catch (error) {
       console.error('Error deleting event:', error);
+      showError('Failed to delete event');
+    }
+  };
+
+  const toLocalDateTimeString = (isoString: string) => {
+    const date = new Date(isoString);
+    const offset = date.getTimezoneOffset();
+    const local = new Date(date.getTime() - offset * 60 * 1000);
+    return local.toISOString().slice(0, 16);
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedEvent) return;
+    setEditFormData({
+      subject: selectedEvent.subject || '',
+      description: selectedEvent.description || '',
+      location: selectedEvent.location || '',
+      startDateTime: toLocalDateTimeString(selectedEvent.startDateTime),
+      endDateTime: toLocalDateTimeString(selectedEvent.endDateTime),
+      isAllDay: selectedEvent.isAllDay,
+      isPrivate: selectedEvent.isPrivate,
+      status: selectedEvent.status || 'CONFIRMED',
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedEvent) return;
+    try {
+      const response = await fetch('/api/calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedEvent.id,
+          subject: editFormData.subject,
+          description: editFormData.description || null,
+          location: editFormData.location || null,
+          startDateTime: new Date(editFormData.startDateTime).toISOString(),
+          endDateTime: new Date(editFormData.endDateTime).toISOString(),
+          isAllDay: editFormData.isAllDay,
+          isPrivate: editFormData.isPrivate,
+          status: editFormData.status,
+        }),
+      });
+
+      if (response.ok) {
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        setSelectedEvent(null);
+        fetchEvents();
+        showSuccess('Event updated successfully');
+      } else {
+        showError('Failed to update event');
+      }
+    } catch (error) {
+      console.error('Error updating event:', error);
+      showError('Failed to update event');
     }
   };
 
@@ -166,6 +256,7 @@ export default function CalendarPage() {
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
+    setEditMode(false);
     setDetailDialogOpen(true);
   };
 
@@ -241,19 +332,32 @@ export default function CalendarPage() {
 
   const daysWithEvents = getEventsByDay();
 
+  const exportData = events.map(e => ({
+    Subject: e.subject,
+    Start: new Date(e.startDateTime).toLocaleString(),
+    End: new Date(e.endDateTime).toLocaleString(),
+    Location: e.location || '',
+    'All Day': e.isAllDay ? 'Yes' : 'No',
+    Recurring: e.recurrenceRule ? 'Yes' : 'No',
+    Attendees: e.attendees?.length || 0,
+  }));
+
   return (
     <DashboardLayout>
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <Box sx={{ mb: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Typography variant="h4">Calendar</Typography>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setDialogOpen(true)}
-            >
-              New Event
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <ExportToolbar data={exportData} filename="calendar-events" title="Calendar Events" />
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setDialogOpen(true)}
+              >
+                New Event
+              </Button>
+            </Box>
           </Box>
 
           {/* Stats Cards */}
@@ -309,7 +413,9 @@ export default function CalendarPage() {
           </Paper>
 
           {/* Agenda View - Only days with events */}
-          {daysWithEvents.length === 0 ? (
+          {loading ? (
+            <TableSkeleton rows={5} columns={4} />
+          ) : daysWithEvents.length === 0 ? (
             <Paper sx={{ p: 4, textAlign: 'center' }}>
               <EventIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
               <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -363,6 +469,7 @@ export default function CalendarPage() {
                             '&:hover': {
                               bgcolor: 'action.hover',
                             },
+                            transition: 'background-color 0.2s',
                           }}
                           onClick={() => handleEventClick(event)}
                         >
@@ -433,7 +540,7 @@ export default function CalendarPage() {
         {/* Event Detail Dialog */}
         <Dialog
           open={detailDialogOpen}
-          onClose={() => setDetailDialogOpen(false)}
+          onClose={() => { setDetailDialogOpen(false); setEditMode(false); }}
           maxWidth="sm"
           fullWidth
         >
@@ -443,15 +550,85 @@ export default function CalendarPage() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Box>
                     <Typography variant="h5" fontWeight="medium">
-                      {selectedEvent.subject}
+                      {editMode ? 'Edit Event' : selectedEvent.subject}
                     </Typography>
                   </Box>
-                  <IconButton onClick={() => setDetailDialogOpen(false)} size="small">
+                  <IconButton onClick={() => { setDetailDialogOpen(false); setEditMode(false); }} size="small">
                     <CloseIcon />
                   </IconButton>
                 </Box>
               </DialogTitle>
               <DialogContent dividers>
+                {editMode ? (
+                  <Stack spacing={2} sx={{ mt: 1 }}>
+                    <TextField
+                      fullWidth
+                      label="Subject"
+                      value={editFormData.subject}
+                      onChange={(e) => setEditFormData({ ...editFormData, subject: e.target.value })}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Description"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      multiline
+                      rows={3}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Location"
+                      value={editFormData.location}
+                      onChange={(e) => setEditFormData({ ...editFormData, location: e.target.value })}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Start Date & Time"
+                      type="datetime-local"
+                      value={editFormData.startDateTime}
+                      onChange={(e) => setEditFormData({ ...editFormData, startDateTime: e.target.value })}
+                      slotProps={{ inputLabel: { shrink: true } }}
+                    />
+                    <TextField
+                      fullWidth
+                      label="End Date & Time"
+                      type="datetime-local"
+                      value={editFormData.endDateTime}
+                      onChange={(e) => setEditFormData({ ...editFormData, endDateTime: e.target.value })}
+                      slotProps={{ inputLabel: { shrink: true } }}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={editFormData.isAllDay}
+                          onChange={(e) => setEditFormData({ ...editFormData, isAllDay: e.target.checked })}
+                        />
+                      }
+                      label="All Day Event"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={editFormData.isPrivate}
+                          onChange={(e) => setEditFormData({ ...editFormData, isPrivate: e.target.checked })}
+                        />
+                      }
+                      label="Private"
+                    />
+                    <FormControl fullWidth>
+                      <InputLabel>Status</InputLabel>
+                      <Select
+                        value={editFormData.status}
+                        onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                        label="Status"
+                      >
+                        <MenuItem value="CONFIRMED">Confirmed</MenuItem>
+                        <MenuItem value="TENTATIVE">Tentative</MenuItem>
+                        <MenuItem value="CANCELLED">Cancelled</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                ) : (
                 <Stack spacing={3}>
                   {/* Date and Time */}
                   <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
@@ -559,18 +736,43 @@ export default function CalendarPage() {
                     </Box>
                   )}
                 </Stack>
+                )}
               </DialogContent>
               <DialogActions>
-                <Button
-                  color="error"
-                  startIcon={<DeleteIcon />}
-                  onClick={() => handleDeleteEvent(selectedEvent.id)}
-                >
-                  Delete
-                </Button>
-                <Button variant="contained" onClick={() => setDetailDialogOpen(false)}>
-                  Close
-                </Button>
+                {editMode ? (
+                  <>
+                    <Button onClick={() => setEditMode(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="contained"
+                      startIcon={<SaveIcon />}
+                      onClick={handleSaveEdit}
+                      disabled={!editFormData.subject}
+                    >
+                      Save
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDeleteEvent(selectedEvent.id)}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      startIcon={<EditIcon />}
+                      onClick={handleStartEdit}
+                    >
+                      Edit
+                    </Button>
+                    <Button variant="contained" onClick={() => setDetailDialogOpen(false)}>
+                      Close
+                    </Button>
+                  </>
+                )}
               </DialogActions>
             </>
           )}

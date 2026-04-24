@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,17 +11,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get('clientId');
     const isActive = searchParams.get('isActive');
     const category = searchParams.get('category');
 
+    const where = {
+      ...(clientId && { clientId }),
+      ...(isActive !== null && { isActive: isActive === 'true' }),
+      ...(category && { category }),
+    };
+
+    const total = await prisma.product.count({ where });
+
     const products = await prisma.product.findMany({
-      where: {
-        ...(clientId && { clientId }),
-        ...(isActive !== null && { isActive: isActive === 'true' }),
-        ...(category && { category }),
-      },
+      where,
       include: {
         client: true,
         _count: {
@@ -29,12 +36,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        name: 'asc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(products);
+    return NextResponse.json(buildPaginatedResponse(products, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching products:', error);
     return NextResponse.json(

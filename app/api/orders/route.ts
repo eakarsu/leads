@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 // GET - List orders
 export async function GET(request: NextRequest) {
@@ -10,6 +11,8 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(request);
 
     const { searchParams } = new URL(request.url);
     const accountId = searchParams.get('accountId');
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
       whereClause.contractId = contractId;
     }
 
+    const total = await prisma.order.count({ where: whereClause });
+
     const orders = await prisma.order.findMany({
       where: whereClause,
       include: {
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
           select: { lineItems: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Fetch account names for orders
@@ -63,7 +68,7 @@ export async function GET(request: NextRequest) {
       totalValue: ordersWithAccounts.reduce((sum, o) => sum + (typeof o.totalAmount === 'number' ? o.totalAmount : 0), 0),
     };
 
-    return NextResponse.json({ orders: ordersWithAccounts, stats });
+    return NextResponse.json(buildPaginatedResponse(ordersWithAccounts, total, paginationParams));
   } catch (error) {
     console.error('Error fetching orders:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

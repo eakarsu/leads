@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,15 +11,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
 
     const where: any = {};
     if (status) where.status = status;
 
+    const total = await prisma.massEmailJob.count({ where });
+
     const jobs = await prisma.massEmailJob.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      ...buildPrismaQuery(paginationParams),
     });
 
     // Calculate stats
@@ -32,7 +37,7 @@ export async function GET(req: NextRequest) {
       totalClicked: jobs.reduce((sum, j) => sum + (j.clickedCount || 0), 0),
     };
 
-    return NextResponse.json({ jobs, stats });
+    return NextResponse.json(buildPaginatedResponse(jobs, total, paginationParams, { stats }));
   } catch (error: any) {
     console.error('Error fetching mass email jobs:', error);
     return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 });

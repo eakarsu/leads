@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,19 +11,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get('clientId');
     const ownerId = searchParams.get('ownerId');
     const accountId = searchParams.get('accountId');
     const isPrimary = searchParams.get('isPrimary');
 
+    const where = {
+      ...(clientId && { clientId }),
+      ...(ownerId && { ownerId }),
+      ...(accountId && { accountId }),
+      ...(isPrimary !== null && { isPrimary: isPrimary === 'true' }),
+    };
+
+    const total = await prisma.contact.count({ where });
+
     const contacts = await prisma.contact.findMany({
-      where: {
-        ...(clientId && { clientId }),
-        ...(ownerId && { ownerId }),
-        ...(accountId && { accountId }),
-        ...(isPrimary !== null && { isPrimary: isPrimary === 'true' }),
-      },
+      where,
       include: {
         client: true,
         owner: {
@@ -49,12 +56,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(contacts);
+    return NextResponse.json(buildPaginatedResponse(contacts, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching contacts:', error);
     return NextResponse.json(

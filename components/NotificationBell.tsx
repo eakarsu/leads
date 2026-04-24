@@ -60,7 +60,7 @@ export default function NotificationBell() {
       const response = await fetch('/api/notifications?limit=10');
       if (response.ok) {
         const data = await response.json();
-        setNotifications(data);
+        setNotifications(Array.isArray(data) ? data : data.data || []);
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);

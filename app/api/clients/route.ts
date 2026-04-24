@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,6 +10,10 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const paginationParams = parsePaginationParams(req, { sortBy: 'name', sortOrder: 'asc' });
+
+    const total = await prisma.clientCompany.count();
 
     const clients = await prisma.clientCompany.findMany({
       include: {
@@ -19,12 +24,10 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: {
-        name: 'asc',
-      },
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(clients);
+    return NextResponse.json(buildPaginatedResponse(clients, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching clients:', error);
     return NextResponse.json({ error: 'Failed to fetch clients' }, { status: 500 });

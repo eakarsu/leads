@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -39,7 +38,17 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import TouchAppIcon from '@mui/icons-material/TouchApp';
 import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CancelIcon from '@mui/icons-material/Close';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface MassEmailJob {
   id: string;
@@ -60,6 +69,17 @@ interface MassEmailJob {
   createdAt: string;
 }
 
+const columns: Column[] = [
+  { id: 'name', label: 'Campaign' },
+  { id: 'totalRecipients', label: 'Recipients' },
+  { id: 'sentCount', label: 'Sent' },
+  { id: 'openRate', label: 'Open Rate', sortable: false },
+  { id: 'clickRate', label: 'Click Rate', sortable: false },
+  { id: 'status', label: 'Status' },
+  { id: 'createdAt', label: 'Date' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function MassEmailPage() {
   const [jobs, setJobs] = useState<MassEmailJob[]>([]);
   const [stats, setStats] = useState({
@@ -77,6 +97,22 @@ export default function MassEmailPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<MassEmailJob | null>(null);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const { showSuccess, showError } = useToast();
+  const { confirm } = useConfirmDialog();
+
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    subject: '',
+    scheduledAt: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     subject: '',
@@ -93,10 +129,12 @@ export default function MassEmailPage() {
     try {
       const response = await fetch('/api/mass-email');
       const data = await response.json();
-      setJobs(data.jobs || []);
+      const arr = Array.isArray(data) ? data : data.data || [];
+      setJobs(arr);
       setStats(data.stats || {});
     } catch (error) {
       console.error('Error fetching jobs:', error);
+      showError('Failed to load email campaigns');
     } finally {
       setLoading(false);
     }
@@ -114,9 +152,13 @@ export default function MassEmailPage() {
         setDialogOpen(false);
         fetchJobs();
         resetForm();
+        showSuccess('Campaign created successfully');
+      } else {
+        showError('Failed to create campaign');
       }
     } catch (error) {
       console.error('Error creating job:', error);
+      showError('Failed to create campaign');
     }
   };
 
@@ -128,8 +170,78 @@ export default function MassEmailPage() {
         body: JSON.stringify({ jobId, action: 'send' }),
       });
       fetchJobs();
+      showSuccess('Campaign sending started');
     } catch (error) {
       console.error('Error sending job:', error);
+      showError('Failed to send campaign');
+    }
+  };
+
+  const handleDeleteJob = async (jobId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const confirmed = await confirm({
+      title: 'Delete Campaign',
+      message: 'Are you sure you want to delete this email campaign?',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    try {
+      await fetch(`/api/mass-email?id=${jobId}`, { method: 'DELETE' });
+      fetchJobs();
+      if (selectedJob?.id === jobId) {
+        setDetailOpen(false);
+        setSelectedJob(null);
+      }
+      showSuccess('Campaign deleted successfully');
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      showError('Failed to delete campaign');
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedJob) return;
+    setEditFormData({
+      name: selectedJob.name || '',
+      subject: selectedJob.subject || '',
+      scheduledAt: selectedJob.scheduledAt ? selectedJob.scheduledAt.slice(0, 16) : '',
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedJob) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/mass-email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedJob.id, ...editFormData }),
+      });
+      if (response.ok) {
+        showSuccess('Campaign updated successfully');
+        setEditMode(false);
+        setDetailOpen(false);
+        fetchJobs();
+      } else {
+        showError('Failed to update campaign');
+      }
+    } catch (error) {
+      console.error('Error updating campaign:', error);
+      showError('Failed to update campaign');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleSort = (columnId: string) => {
+    if (sortBy === columnId) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(columnId);
+      setSortOrder('asc');
     }
   };
 
@@ -145,18 +257,12 @@ export default function MassEmailPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'DRAFT':
-        return 'default';
-      case 'SCHEDULED':
-        return 'info';
-      case 'SENDING':
-        return 'warning';
-      case 'COMPLETED':
-        return 'success';
-      case 'FAILED':
-        return 'error';
-      default:
-        return 'default';
+      case 'DRAFT': return 'default';
+      case 'SCHEDULED': return 'info';
+      case 'SENDING': return 'warning';
+      case 'COMPLETED': return 'success';
+      case 'FAILED': return 'error';
+      default: return 'default';
     }
   };
 
@@ -170,38 +276,63 @@ export default function MassEmailPage() {
     return ((job.clickedCount / job.openedCount) * 100).toFixed(1);
   };
 
-  const filteredJobs = jobs.filter((j) => {
-    // Search filter
-    const searchLower = search.toLowerCase();
-    const matchesSearch = !search ||
-      j.name.toLowerCase().includes(searchLower) ||
-      j.subject.toLowerCase().includes(searchLower);
+  const filteredJobs = jobs
+    .filter((j) => {
+      const searchLower = search.toLowerCase();
+      const matchesSearch = !search ||
+        j.name.toLowerCase().includes(searchLower) ||
+        j.subject.toLowerCase().includes(searchLower);
 
-    // Tab filter
-    let matchesTab = true;
-    if (tabValue === 1) matchesTab = j.status === 'DRAFT';
-    else if (tabValue === 2) matchesTab = j.status === 'SCHEDULED';
-    else if (tabValue === 3) matchesTab = j.status === 'COMPLETED';
+      let matchesTab = true;
+      if (tabValue === 1) matchesTab = j.status === 'DRAFT';
+      else if (tabValue === 2) matchesTab = j.status === 'SCHEDULED';
+      else if (tabValue === 3) matchesTab = j.status === 'COMPLETED';
 
-    return matchesSearch && matchesTab;
-  });
+      return matchesSearch && matchesTab;
+    })
+    .sort((a, b) => {
+      const aVal = (a as any)[sortBy];
+      const bVal = (b as any)[sortBy];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal));
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+
+  const totalItems = filteredJobs.length;
+  const paginatedJobs = filteredJobs.slice((page - 1) * pageSize, page * pageSize);
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat().format(num);
   };
+
+  const exportData = filteredJobs.map(j => ({
+    Campaign: j.name,
+    Subject: j.subject,
+    Recipients: j.totalRecipients,
+    Sent: j.sentCount,
+    'Open Rate': `${getOpenRate(j)}%`,
+    'Click Rate': `${getClickRate(j)}%`,
+    Status: j.status,
+    Created: new Date(j.createdAt).toLocaleDateString(),
+  }));
 
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Mass Email</Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setDialogOpen(true)}
-          >
-            New Campaign
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <ExportToolbar data={exportData} filename="mass-email-campaigns" title="Mass Email Campaigns" />
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setDialogOpen(true)}
+            >
+              New Campaign
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -275,127 +406,142 @@ export default function MassEmailPage() {
         </Paper>
 
         {/* Jobs Table */}
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Campaign</TableCell>
-                <TableCell>Recipients</TableCell>
-                <TableCell>Sent</TableCell>
-                <TableCell>Open Rate</TableCell>
-                <TableCell>Click Rate</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell>Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredJobs.map((job) => (
-                <TableRow
-                  key={job.id}
-                  hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    setSelectedJob(job);
-                    setDetailOpen(true);
-                  }}
-                >
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="bold">
-                      {job.name}
-                    </Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      {job.subject}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={job.recipientType}
-                      size="small"
-                      variant="outlined"
-                      sx={{ mr: 1 }}
-                    />
-                    {formatNumber(job.totalRecipients)}
-                  </TableCell>
-                  <TableCell>
-                    {job.status === 'SENDING' ? (
-                      <Box sx={{ width: 100 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={(job.sentCount / job.totalRecipients) * 100}
+        {loading ? (
+          <TableSkeleton rows={5} columns={8} />
+        ) : (
+          <TableContainer component={Paper}>
+            <Table>
+              <SortableTableHead
+                columns={columns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
+              <TableBody>
+                {paginatedJobs.map((job) => (
+                  <TableRow
+                    key={job.id}
+                    hover
+                    sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                    onClick={() => {
+                      setSelectedJob(job);
+                      setEditMode(false);
+                      setDetailOpen(true);
+                    }}
+                  >
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="bold">
+                        {job.name}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        {job.subject}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={job.recipientType}
+                        size="small"
+                        variant="outlined"
+                        sx={{ mr: 1 }}
+                      />
+                      {formatNumber(job.totalRecipients)}
+                    </TableCell>
+                    <TableCell>
+                      {job.status === 'SENDING' ? (
+                        <Box sx={{ width: 100 }}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={(job.sentCount / job.totalRecipients) * 100}
+                          />
+                          <Typography variant="caption">
+                            {formatNumber(job.sentCount)} / {formatNumber(job.totalRecipients)}
+                          </Typography>
+                        </Box>
+                      ) : (
+                        formatNumber(job.sentCount)
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {job.sentCount > 0 ? (
+                        <Chip
+                          label={`${getOpenRate(job)}%`}
+                          size="small"
+                          color={parseFloat(getOpenRate(job) as string) > 25 ? 'success' : 'default'}
                         />
-                        <Typography variant="caption">
-                          {formatNumber(job.sentCount)} / {formatNumber(job.totalRecipients)}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      formatNumber(job.sentCount)
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {job.sentCount > 0 ? (
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {job.openedCount > 0 ? (
+                        <Chip
+                          label={`${getClickRate(job)}%`}
+                          size="small"
+                          color={parseFloat(getClickRate(job) as string) > 10 ? 'success' : 'default'}
+                        />
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Chip
-                        label={`${getOpenRate(job)}%`}
+                        label={job.status}
+                        color={getStatusColor(job.status) as any}
                         size="small"
-                        color={parseFloat(getOpenRate(job) as string) > 25 ? 'success' : 'default'}
                       />
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {job.openedCount > 0 ? (
-                      <Chip
-                        label={`${getClickRate(job)}%`}
-                        size="small"
-                        color={parseFloat(getClickRate(job) as string) > 10 ? 'success' : 'default'}
-                      />
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={job.status}
-                      color={getStatusColor(job.status) as any}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    {job.completedAt
-                      ? new Date(job.completedAt).toLocaleDateString()
-                      : job.scheduledAt
-                      ? new Date(job.scheduledAt).toLocaleDateString()
-                      : new Date(job.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {job.status === 'DRAFT' && (
-                      <Tooltip title="Send Now">
+                    </TableCell>
+                    <TableCell>
+                      {job.completedAt
+                        ? new Date(job.completedAt).toLocaleDateString()
+                        : job.scheduledAt
+                        ? new Date(job.scheduledAt).toLocaleDateString()
+                        : new Date(job.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      {job.status === 'DRAFT' && (
+                        <Tooltip title="Send Now">
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendJob(job.id);
+                            }}
+                          >
+                            <PlayArrowIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="Delete">
                         <IconButton
                           size="small"
-                          color="success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSendJob(job.id);
-                          }}
+                          color="error"
+                          onClick={(e) => handleDeleteJob(job.id, e)}
                         >
-                          <PlayArrowIcon />
+                          <DeleteIcon />
                         </IconButton>
                       </Tooltip>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filteredJobs.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} align="center">
-                    No campaigns found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {paginatedJobs.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center">
+                      No campaigns found
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+            />
+          </TableContainer>
+        )}
       </Box>
 
       {/* Create Campaign Dialog */}
@@ -482,7 +628,7 @@ export default function MassEmailPage() {
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedJob && (
+          {selectedJob && !editMode && (
             <Box>
               <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
                 <Chip
@@ -575,22 +721,86 @@ export default function MassEmailPage() {
               </Grid>
             </Box>
           )}
+          {selectedJob && editMode && (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Campaign Name"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Subject"
+                  value={editFormData.subject}
+                  onChange={(e) => setEditFormData({ ...editFormData, subject: e.target.value })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  label="Scheduled Date"
+                  type="datetime-local"
+                  value={editFormData.scheduledAt}
+                  onChange={(e) => setEditFormData({ ...editFormData, scheduledAt: e.target.value })}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+            </Grid>
+          )}
         </DialogContent>
         <DialogActions>
-          {selectedJob && selectedJob.status === 'DRAFT' && (
-            <Button
-              color="success"
-              variant="contained"
-              startIcon={<SendIcon />}
-              onClick={() => {
-                handleSendJob(selectedJob.id);
-                setDetailOpen(false);
-              }}
-            >
-              Send Now
-            </Button>
+          {selectedJob && !editMode ? (
+            <>
+              {selectedJob.status === 'DRAFT' && (
+                <Button
+                  color="success"
+                  variant="contained"
+                  startIcon={<SendIcon />}
+                  onClick={() => {
+                    handleSendJob(selectedJob.id);
+                    setDetailOpen(false);
+                  }}
+                >
+                  Send Now
+                </Button>
+              )}
+              <Button onClick={() => setDetailOpen(false)}>Close</Button>
+              <Button
+                startIcon={<EditIcon />}
+                onClick={handleStartEdit}
+              >
+                Edit
+              </Button>
+              <Button
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={(e) => handleDeleteJob(selectedJob.id, e)}
+              >
+                Delete
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                startIcon={<CancelIcon />}
+                onClick={() => setEditMode(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+              >
+                {editSaving ? 'Saving...' : 'Save'}
+              </Button>
+            </>
           )}
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </DashboardLayout>

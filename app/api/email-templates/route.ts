@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,21 +11,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const paginationParams = parsePaginationParams(req);
+
     const { searchParams } = new URL(req.url);
     const category = searchParams.get('category');
     const isActive = searchParams.get('isActive');
 
+    const where = {
+      ...(category && { category }),
+      ...(isActive !== null && { isActive: isActive === 'true' }),
+    };
+
+    const total = await prisma.emailTemplate.count({ where });
+
     const emailTemplates = await prisma.emailTemplate.findMany({
-      where: {
-        ...(category && { category }),
-        ...(isActive !== null && { isActive: isActive === 'true' }),
-      },
-      orderBy: {
-        name: 'asc',
-      },
+      where,
+      ...buildPrismaQuery(paginationParams),
     });
 
-    return NextResponse.json(emailTemplates);
+    return NextResponse.json(buildPaginatedResponse(emailTemplates, total, paginationParams));
   } catch (error: any) {
     console.error('Error fetching email templates:', error);
     return NextResponse.json(

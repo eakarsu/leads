@@ -42,6 +42,17 @@ import SaveIcon from '@mui/icons-material/Save';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
+import TriggerNode from '@/components/process-builder/TriggerNode';
+import ConditionNode from '@/components/process-builder/ConditionNode';
+import ActionNode from '@/components/process-builder/ActionNode';
+import ExecutionHistory from '@/components/process-builder/ExecutionHistory';
+
+// Register custom node types for ReactFlow
+const customNodeTypes = {
+  triggerNode: TriggerNode,
+  conditionNode: ConditionNode,
+  actionNode: ActionNode,
+};
 
 interface ProcessFlow {
   id: string;
@@ -97,7 +108,7 @@ export default function ProcessBuilderPage() {
       const response = await fetch('/api/process-flows');
       if (!response.ok) throw new Error('Failed to fetch flows');
       const data = await response.json();
-      setFlows(data);
+      setFlows(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
       setError(err.message);
     }
@@ -116,6 +127,12 @@ export default function ProcessBuilderPage() {
     setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
   };
 
+  const getCustomNodeType = (type: string): string => {
+    if (type === 'trigger') return 'triggerNode';
+    if (type === 'condition') return 'conditionNode';
+    return 'actionNode'; // email, task, update, api all use ActionNode
+  };
+
   const addNode = (type: string) => {
     const nodeType = nodeTypes.find((nt) => nt.type === type);
     if (!nodeType) return;
@@ -124,40 +141,14 @@ export default function ProcessBuilderPage() {
 
     const newNode: Node = {
       id: nodeId,
-      type: 'default',
+      type: getCustomNodeType(type),
       position: { x: Math.random() * 400, y: Math.random() * 400 },
       data: {
-        label: (
-          <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
-            <span>{nodeType.label}</span>
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteNode(nodeId);
-              }}
-              sx={{
-                color: 'white',
-                padding: '2px',
-                marginLeft: 1,
-                '&:hover': { background: 'rgba(255,255,255,0.2)' }
-              }}
-            >
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        ),
+        label: nodeType.label,
         type: type,
         config: {},
         nodeId: nodeId,
-      },
-      style: {
-        background: nodeType.color,
-        color: 'white',
-        border: '1px solid #222',
-        padding: 10,
-        borderRadius: 5,
-        minWidth: 150,
+        onDelete: deleteNode,
       },
     };
 
@@ -181,6 +172,7 @@ export default function ProcessBuilderPage() {
             data: {
               ...node.data,
               config: nodeConfigData,
+              onDelete: deleteNode,
             },
           };
         }
@@ -194,12 +186,25 @@ export default function ProcessBuilderPage() {
 
   const saveFlow = async () => {
     try {
+      // Strip non-serializable data (callbacks, JSX) from nodes before saving
+      const serializableNodes = nodes.map((node) => ({
+        id: node.id,
+        type: node.type,
+        position: node.position,
+        data: {
+          label: typeof node.data.label === 'string' ? node.data.label : (node.data.type || 'Node'),
+          type: node.data.type,
+          config: node.data.config || {},
+          nodeId: node.data.nodeId || node.id,
+        },
+      }));
+
       const flowData = {
         name: formData.name || `Flow ${Date.now()}`,
         description: formData.description,
         objectType: formData.objectType,
         isActive: formData.isActive,
-        nodes,
+        nodes: serializableNodes,
         edges,
       };
 
@@ -302,6 +307,20 @@ export default function ProcessBuilderPage() {
     }
   };
 
+  const hydrateNodes = (rawNodes: any[]): Node[] => {
+    return rawNodes.map((node) => ({
+      ...node,
+      type: node.type === 'default' ? getCustomNodeType(node.data?.type || 'api') : node.type,
+      data: {
+        ...node.data,
+        label: typeof node.data?.label === 'string' ? node.data.label : (node.data?.type || 'Node'),
+        onDelete: deleteNode,
+      },
+      // Remove legacy inline styles that were baked into old saved flows
+      style: undefined,
+    }));
+  };
+
   const loadFlow = (flow: ProcessFlow) => {
     setSelectedFlow(flow);
     setFormData({
@@ -310,7 +329,7 @@ export default function ProcessBuilderPage() {
       objectType: flow.objectType,
       isActive: flow.isActive,
     });
-    setNodes(flow.nodes || []);
+    setNodes(hydrateNodes(flow.nodes || []));
     setEdges(flow.edges || []);
   };
 
@@ -590,7 +609,7 @@ export default function ProcessBuilderPage() {
         objectType: example.objectType,
         isActive: example.isActive,
       });
-      setNodes(example.nodes);
+      setNodes(hydrateNodes(example.nodes));
       setEdges(example.edges);
       setSuccess(`Loaded example: ${exampleName}. Click "Save Flow" to save it.`);
     }
@@ -1093,6 +1112,10 @@ export default function ProcessBuilderPage() {
                 </ListItem>
               ))}
             </List>
+
+            {selectedFlow && selectedFlow.id && !selectedFlow.id.startsWith('temp-') && (
+              <ExecutionHistory flowId={selectedFlow.id} />
+            )}
           </Box>
         </Drawer>
 
@@ -1125,6 +1148,7 @@ export default function ProcessBuilderPage() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            nodeTypes={customNodeTypes}
             fitView
           >
             <Controls />

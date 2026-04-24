@@ -43,6 +43,8 @@ import WarningIcon from '@mui/icons-material/Warning';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 import BusinessIcon from '@mui/icons-material/Business';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import ScheduleIcon from '@mui/icons-material/Schedule';
@@ -92,6 +94,16 @@ export default function ServiceContractsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<ServiceContract | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    contractType: 'SUPPORT',
+    startDate: '',
+    endDate: '',
+    responseTimeHours: 0,
+    contractValue: 0,
+  });
+  const [editSaving, setEditSaving] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     accountId: '',
@@ -130,7 +142,7 @@ export default function ServiceContractsPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
@@ -184,8 +196,43 @@ export default function ServiceContractsPage() {
     }
   };
 
+  const handleStartEdit = () => {
+    if (!selectedContract) return;
+    setEditFormData({
+      name: selectedContract.name || '',
+      contractType: selectedContract.contractType || 'SUPPORT',
+      startDate: selectedContract.startDate ? new Date(selectedContract.startDate).toISOString().split('T')[0] : '',
+      endDate: selectedContract.endDate ? new Date(selectedContract.endDate).toISOString().split('T')[0] : '',
+      responseTimeHours: selectedContract.responseTimeHours || 0,
+      contractValue: selectedContract.contractValue || 0,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedContract) return;
+    setEditSaving(true);
+    try {
+      const response = await fetch('/api/service-contracts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedContract.id, ...editFormData }),
+      });
+      if (response.ok) {
+        setEditMode(false);
+        setDetailDialogOpen(false);
+        fetchContracts();
+      }
+    } catch (error) {
+      console.error('Error updating service contract:', error);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleRowClick = (contract: ServiceContract) => {
     setSelectedContract(contract);
+    setEditMode(false);
     setDetailDialogOpen(true);
   };
 
@@ -478,7 +525,7 @@ export default function ServiceContractsPage() {
       {/* Contract Detail Dialog */}
       <Dialog
         open={detailDialogOpen}
-        onClose={() => setDetailDialogOpen(false)}
+        onClose={() => { setDetailDialogOpen(false); setEditMode(false); }}
         maxWidth="md"
         fullWidth
       >
@@ -489,196 +536,279 @@ export default function ServiceContractsPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <SupportAgentIcon color="primary" />
                   <Box>
-                    <Typography variant="h6">{selectedContract.name}</Typography>
+                    <Typography variant="h6">{editMode ? 'Edit Contract' : selectedContract.name}</Typography>
                     <Typography variant="caption" color="text.secondary">
                       {selectedContract.contractNumber}
                     </Typography>
                   </Box>
                 </Box>
-                <IconButton onClick={() => setDetailDialogOpen(false)}>
+                <IconButton onClick={() => { setDetailDialogOpen(false); setEditMode(false); }}>
                   <CloseIcon />
                 </IconButton>
               </Box>
             </DialogTitle>
             <DialogContent dividers>
-              <Grid container spacing={3}>
-                {/* Status */}
-                <Grid size={{ xs: 12 }}>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Chip
-                      label={selectedContract.status}
-                      color={getStatusColor(selectedContract.status) as any}
-                    />
-                    <Chip
-                      label={getContractTypeLabel(selectedContract.contractType)}
-                      variant="outlined"
-                    />
-                    {selectedContract.autoRenew && (
-                      <Chip icon={<AutorenewIcon />} label="Auto-Renewal" color="info" variant="outlined" />
-                    )}
-                    {selectedContract.status === 'ACTIVE' && getDaysRemaining(selectedContract.endDate) <= 30 && getDaysRemaining(selectedContract.endDate) > 0 && (
-                      <Chip icon={<WarningIcon />} label={`${getDaysRemaining(selectedContract.endDate)} days remaining`} color="warning" />
-                    )}
-                  </Box>
-                </Grid>
-
-                {/* Account & Value */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <BusinessIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Account
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedContract.account?.name || 'No account linked'}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <AttachMoneyIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Contract Value
-                    </Typography>
-                    <Typography variant="h5" color="primary">
-                      {formatCurrency(selectedContract.contractValue || 0)}
-                    </Typography>
-                    {selectedContract.billingFrequency && (
-                      <Typography variant="caption" color="text.secondary">
-                        Billed {selectedContract.billingFrequency.toLowerCase()}
-                      </Typography>
-                    )}
-                  </Paper>
-                </Grid>
-
-                {/* SLA Details */}
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <TimerIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Response Time
-                    </Typography>
-                    <Typography variant="h6">
-                      {selectedContract.responseTimeHours ? `${selectedContract.responseTimeHours} hours` : 'N/A'}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <TimerIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Resolution Time
-                    </Typography>
-                    <Typography variant="h6">
-                      {selectedContract.resolutionTimeHours ? `${selectedContract.resolutionTimeHours} hours` : 'N/A'}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 4 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <ScheduleIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Support Hours
-                    </Typography>
-                    <Typography variant="h6">
-                      {selectedContract.supportHours || 'N/A'}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                {/* Dates */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <CalendarTodayIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      Start Date
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedContract.startDate ? formatDate(selectedContract.startDate) : '-'}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      <CalendarTodayIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
-                      End Date
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedContract.endDate ? formatDate(selectedContract.endDate) : '-'}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                {/* Terms */}
-                {selectedContract.terms && (
+              {selectedContract && !editMode && (
+                <Grid container spacing={3}>
+                  {/* Status */}
                   <Grid size={{ xs: 12 }}>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={selectedContract.status}
+                        color={getStatusColor(selectedContract.status) as any}
+                      />
+                      <Chip
+                        label={getContractTypeLabel(selectedContract.contractType)}
+                        variant="outlined"
+                      />
+                      {selectedContract.autoRenew && (
+                        <Chip icon={<AutorenewIcon />} label="Auto-Renewal" color="info" variant="outlined" />
+                      )}
+                      {selectedContract.status === 'ACTIVE' && getDaysRemaining(selectedContract.endDate) <= 30 && getDaysRemaining(selectedContract.endDate) > 0 && (
+                        <Chip icon={<WarningIcon />} label={`${getDaysRemaining(selectedContract.endDate)} days remaining`} color="warning" />
+                      )}
+                    </Box>
+                  </Grid>
+
+                  {/* Account & Value */}
+                  <Grid size={{ xs: 12, md: 6 }}>
                     <Paper variant="outlined" sx={{ p: 2 }}>
                       <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        Terms & Conditions
+                        <BusinessIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Account
                       </Typography>
-                      <Typography variant="body2">
-                        {selectedContract.terms}
+                      <Typography variant="body1">
+                        {selectedContract.account?.name || 'No account linked'}
                       </Typography>
                     </Paper>
                   </Grid>
-                )}
 
-                {/* Additional Info */}
-                <Grid size={{ xs: 12 }}>
-                  <Divider sx={{ my: 1 }} />
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Additional Information
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Contract ID</Typography>
-                      <Typography variant="body2">{selectedContract.id}</Typography>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <AttachMoneyIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Contract Value
+                      </Typography>
+                      <Typography variant="h5" color="primary">
+                        {formatCurrency(selectedContract.contractValue || 0)}
+                      </Typography>
+                      {selectedContract.billingFrequency && (
+                        <Typography variant="caption" color="text.secondary">
+                          Billed {selectedContract.billingFrequency.toLowerCase()}
+                        </Typography>
+                      )}
+                    </Paper>
+                  </Grid>
+
+                  {/* SLA Details */}
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <TimerIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Response Time
+                      </Typography>
+                      <Typography variant="h6">
+                        {selectedContract.responseTimeHours ? `${selectedContract.responseTimeHours} hours` : 'N/A'}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <TimerIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Resolution Time
+                      </Typography>
+                      <Typography variant="h6">
+                        {selectedContract.resolutionTimeHours ? `${selectedContract.resolutionTimeHours} hours` : 'N/A'}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <ScheduleIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Support Hours
+                      </Typography>
+                      <Typography variant="h6">
+                        {selectedContract.supportHours || 'N/A'}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  {/* Dates */}
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <CalendarTodayIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        Start Date
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedContract.startDate ? formatDate(selectedContract.startDate) : '-'}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        <CalendarTodayIcon fontSize="small" sx={{ mr: 1, verticalAlign: 'middle' }} />
+                        End Date
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedContract.endDate ? formatDate(selectedContract.endDate) : '-'}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  {/* Terms */}
+                  {selectedContract.terms && (
+                    <Grid size={{ xs: 12 }}>
+                      <Paper variant="outlined" sx={{ p: 2 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          Terms & Conditions
+                        </Typography>
+                        <Typography variant="body2">
+                          {selectedContract.terms}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                  )}
+
+                  {/* Additional Info */}
+                  <Grid size={{ xs: 12 }}>
+                    <Divider sx={{ my: 1 }} />
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Additional Information
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Contract ID</Typography>
+                        <Typography variant="body2">{selectedContract.id}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Line Items</Typography>
+                        <Typography variant="body2">{selectedContract._count?.lineItems || 0}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Created</Typography>
+                        <Typography variant="body2">{formatDateTime(selectedContract.createdAt)}</Typography>
+                      </Box>
                     </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Line Items</Typography>
-                      <Typography variant="body2">{selectedContract._count?.lineItems || 0}</Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Created</Typography>
-                      <Typography variant="body2">{formatDateTime(selectedContract.createdAt)}</Typography>
-                    </Box>
-                  </Box>
+                  </Grid>
                 </Grid>
-              </Grid>
+              )}
+              {selectedContract && editMode && (
+                <Grid container spacing={2} sx={{ pt: 1 }}>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Contract Type"
+                      select
+                      value={editFormData.contractType}
+                      onChange={(e) => setEditFormData({ ...editFormData, contractType: e.target.value })}
+                    >
+                      <MenuItem value="WARRANTY">Warranty</MenuItem>
+                      <MenuItem value="SUPPORT">Support</MenuItem>
+                      <MenuItem value="MAINTENANCE">Maintenance</MenuItem>
+                      <MenuItem value="SLA">SLA</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Response Time (hours)"
+                      type="number"
+                      value={editFormData.responseTimeHours}
+                      onChange={(e) => setEditFormData({ ...editFormData, responseTimeHours: parseInt(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="Start Date"
+                      type="date"
+                      value={editFormData.startDate}
+                      onChange={(e) => setEditFormData({ ...editFormData, startDate: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <TextField
+                      fullWidth
+                      label="End Date"
+                      type="date"
+                      value={editFormData.endDate}
+                      onChange={(e) => setEditFormData({ ...editFormData, endDate: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField
+                      fullWidth
+                      label="Contract Value"
+                      type="number"
+                      value={editFormData.contractValue}
+                      onChange={(e) => setEditFormData({ ...editFormData, contractValue: parseFloat(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                </Grid>
+              )}
             </DialogContent>
             <DialogActions sx={{ px: 3, py: 2 }}>
-              {selectedContract.status === 'DRAFT' && (
+              {!editMode ? (
                 <>
+                  {selectedContract.status === 'DRAFT' && (
+                    <>
+                      <Button
+                        color="success"
+                        startIcon={<CheckCircleIcon />}
+                        onClick={(e) => {
+                          handleActivateContract(selectedContract.id, e);
+                          setDetailDialogOpen(false);
+                        }}
+                      >
+                        Activate
+                      </Button>
+                      <Button
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={(e) => handleDeleteContract(selectedContract.id, e)}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                  {selectedContract.status === 'ACTIVE' && (
+                    <Button color="primary" startIcon={<AutorenewIcon />}>
+                      Renew Contract
+                    </Button>
+                  )}
+                  <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
+                  <Button startIcon={<EditIcon />} onClick={handleStartEdit}>Edit</Button>
+                </>
+              ) : (
+                <>
+                  <Button startIcon={<CloseIcon />} onClick={() => setEditMode(false)}>Cancel</Button>
                   <Button
-                    color="success"
-                    startIcon={<CheckCircleIcon />}
-                    onClick={(e) => {
-                      handleActivateContract(selectedContract.id, e);
-                      setDetailDialogOpen(false);
-                    }}
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={handleSaveEdit}
+                    disabled={editSaving}
                   >
-                    Activate
-                  </Button>
-                  <Button
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    onClick={(e) => handleDeleteContract(selectedContract.id, e)}
-                  >
-                    Delete
+                    {editSaving ? 'Saving...' : 'Save'}
                   </Button>
                 </>
               )}
-              {selectedContract.status === 'ACTIVE' && (
-                <Button color="primary" startIcon={<AutorenewIcon />}>
-                  Renew Contract
-                </Button>
-              )}
-              <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
             </DialogActions>
           </>
         )}

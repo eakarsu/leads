@@ -99,9 +99,18 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ contract });
     }
 
+    // Field update: convert date strings to Date objects if present
+    const fieldData: Record<string, any> = { ...updateData };
+    if (fieldData.startDate) {
+      fieldData.startDate = new Date(fieldData.startDate);
+    }
+    if (fieldData.endDate) {
+      fieldData.endDate = new Date(fieldData.endDate);
+    }
+
     const contract = await prisma.serviceContract.update({
       where: { id },
-      data: updateData,
+      data: fieldData,
     });
 
     return NextResponse.json({ contract });

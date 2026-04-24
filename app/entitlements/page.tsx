@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -15,7 +15,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableHead,
   TableRow,
   IconButton,
   Chip,
@@ -35,6 +34,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
@@ -42,6 +42,13 @@ import TimerIcon from '@mui/icons-material/Timer';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DashboardLayout from '@/components/DashboardLayout';
+import TableSkeleton from '@/components/TableSkeleton';
+import SortableTableHead, { Column } from '@/components/SortableTableHead';
+import PaginationControls from '@/components/PaginationControls';
+import ExportToolbar from '@/components/ExportToolbar';
+import { usePagination } from '@/lib/usePagination';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface Entitlement {
   id: string;
@@ -66,8 +73,27 @@ interface EntitlementProcess {
   milestones: any[];
 }
 
+const entitlementColumns: Column[] = [
+  { id: 'name', label: 'Name' },
+  { id: 'account', label: 'Account', sortable: false },
+  { id: 'process', label: 'Process', sortable: false },
+  { id: 'endDate', label: 'Valid Until' },
+  { id: 'casesUsed', label: 'Cases Used', sortable: false },
+  { id: 'status', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
+const processColumns: Column[] = [
+  { id: 'name', label: 'Process Name' },
+  { id: 'description', label: 'Description', sortable: false },
+  { id: 'milestones', label: 'Milestones', sortable: false },
+  { id: 'isActive', label: 'Status' },
+  { id: 'actions', label: 'Actions', sortable: false },
+];
+
 export default function EntitlementsPage() {
-  const [entitlements, setEntitlements] = useState<Entitlement[]>([]);
+  const toast = useToast();
+  const { confirm } = useConfirmDialog();
   const [processes, setProcesses] = useState<EntitlementProcess[]>([]);
   const [stats, setStats] = useState({
     totalEntitlements: 0,
@@ -75,14 +101,24 @@ export default function EntitlementsPage() {
     expiringSoon: 0,
     totalCasesRemaining: 0,
   });
-  const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [processDialogOpen, setProcessDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedEntitlement, setSelectedEntitlement] = useState<Entitlement | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    status: '',
+    description: '',
+    startDate: '',
+    endDate: '',
+    remainingCases: 0,
+  });
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [formData, setFormData] = useState({
     name: '',
     accountId: '',
@@ -98,22 +134,34 @@ export default function EntitlementsPage() {
     milestones: [{ name: '', targetMinutes: 60 }],
   });
 
+  const {
+    data: entitlements,
+    loading,
+    error,
+    pagination,
+    setPage,
+    setPageSize,
+    setSort,
+    refresh,
+  } = usePagination<Entitlement>({
+    url: '/api/entitlements',
+    defaultSortBy: 'createdAt',
+    defaultSortOrder: 'desc',
+  });
+
   useEffect(() => {
-    fetchEntitlements();
     fetchProcesses();
     fetchAccounts();
+    fetchStats();
   }, []);
 
-  const fetchEntitlements = async () => {
+  const fetchStats = async () => {
     try {
       const response = await fetch('/api/entitlements');
       const data = await response.json();
-      setEntitlements(data.entitlements || []);
       setStats(data.stats || {});
     } catch (error) {
-      console.error('Error fetching entitlements:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching stats:', error);
     }
   };
 
@@ -131,10 +179,17 @@ export default function EntitlementsPage() {
     try {
       const response = await fetch('/api/clients');
       const data = await response.json();
-      setAccounts(data.clients || data || []);
+      setAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
     }
+  };
+
+  const handleSort = (columnId: string) => {
+    const newOrder = sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(columnId);
+    setSortOrder(newOrder);
+    setSort(columnId, newOrder);
   };
 
   const handleCreateEntitlement = async () => {
@@ -150,11 +205,13 @@ export default function EntitlementsPage() {
 
       if (response.ok) {
         setDialogOpen(false);
-        fetchEntitlements();
+        toast.showSuccess('Entitlement created successfully');
+        refresh();
+        fetchStats();
         resetForm();
       }
     } catch (error) {
-      console.error('Error creating entitlement:', error);
+      toast.showError('Error creating entitlement');
     }
   };
 
@@ -171,33 +228,81 @@ export default function EntitlementsPage() {
 
       if (response.ok) {
         setProcessDialogOpen(false);
+        toast.showSuccess('Process created successfully');
         fetchProcesses();
         setProcessFormData({ name: '', description: '', milestones: [{ name: '', targetMinutes: 60 }] });
       }
     } catch (error) {
-      console.error('Error creating process:', error);
+      toast.showError('Error creating process');
     }
   };
 
   const handleDeleteEntitlement = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this entitlement?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Entitlement',
+      message: 'Are you sure you want to delete this entitlement? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/entitlements?id=${id}`, { method: 'DELETE' });
-      fetchEntitlements();
+      toast.showSuccess('Entitlement deleted successfully');
+      refresh();
+      fetchStats();
     } catch (error) {
-      console.error('Error deleting entitlement:', error);
+      toast.showError('Error deleting entitlement');
     }
   };
 
   const handleDeleteProcess = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this process?')) return;
+    const confirmed = await confirm({
+      title: 'Delete Process',
+      message: 'Are you sure you want to delete this process? This action cannot be undone.',
+      severity: 'error',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/entitlements?id=${id}&type=process`, { method: 'DELETE' });
+      toast.showSuccess('Process deleted successfully');
       fetchProcesses();
     } catch (error) {
-      console.error('Error deleting process:', error);
+      toast.showError('Error deleting process');
+    }
+  };
+
+  const handleStartEdit = () => {
+    if (!selectedEntitlement) return;
+    setEditFormData({
+      name: selectedEntitlement.name,
+      status: selectedEntitlement.status,
+      description: '',
+      startDate: selectedEntitlement.startDate ? selectedEntitlement.startDate.split('T')[0] : '',
+      endDate: selectedEntitlement.endDate ? selectedEntitlement.endDate.split('T')[0] : '',
+      remainingCases: selectedEntitlement.remainingCases,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedEntitlement) return;
+    try {
+      const res = await fetch(`/api/entitlements/${selectedEntitlement.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      toast.showSuccess('Entitlement updated successfully');
+      setEditMode(false);
+      setDetailOpen(false);
+      refresh();
+      fetchStats();
+    } catch (err: any) {
+      toast.showError(err.message);
     }
   };
 
@@ -249,17 +354,36 @@ export default function EntitlementsPage() {
     return ((total - remaining) / total) * 100;
   };
 
+  const filteredEntitlements = useMemo(() => {
+    const searchLower = search.toLowerCase();
+    return entitlements.filter((entitlement) =>
+      !search ||
+      entitlement.name.toLowerCase().includes(searchLower) ||
+      entitlement.account?.name.toLowerCase().includes(searchLower) ||
+      entitlement.process?.name.toLowerCase().includes(searchLower)
+    );
+  }, [entitlements, search]);
+
+  const exportData = filteredEntitlements.map((e) => ({
+    Name: e.name,
+    Account: e.account?.name || '-',
+    Process: e.process?.name || '-',
+    'Valid Until': e.endDate ? new Date(e.endDate).toLocaleDateString() : 'No expiry',
+    'Cases Used': `${e.totalCases - e.remainingCases}/${e.totalCases}`,
+    Status: e.status,
+  }));
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h4">Entitlements & SLAs</Typography>
-          <Box>
+          <Box display="flex" gap={2} alignItems="center">
+            <ExportToolbar data={exportData} filename="entitlements" title="Entitlements" />
             <Button
               variant="outlined"
               startIcon={<AddIcon />}
               onClick={() => setProcessDialogOpen(true)}
-              sx={{ mr: 1 }}
             >
               New Process
             </Button>
@@ -345,116 +469,112 @@ export default function EntitlementsPage() {
 
         {/* Entitlements Tab */}
         {tabValue === 0 && (
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Account</TableCell>
-                  <TableCell>Process</TableCell>
-                  <TableCell>Valid Until</TableCell>
-                  <TableCell>Cases Used</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {entitlements.filter((entitlement) => {
-                  const searchLower = search.toLowerCase();
-                  return !search ||
-                    entitlement.name.toLowerCase().includes(searchLower) ||
-                    entitlement.account?.name.toLowerCase().includes(searchLower) ||
-                    entitlement.process?.name.toLowerCase().includes(searchLower);
-                }).map((entitlement) => (
-                  <TableRow
-                    key={entitlement.id}
-                    hover
-                    sx={{ cursor: 'pointer' }}
-                    onClick={() => {
-                      setSelectedEntitlement(entitlement);
-                      setDetailOpen(true);
-                    }}
-                  >
-                    <TableCell>
-                      <Typography variant="body2" fontWeight="bold">
-                        {entitlement.name}
-                      </Typography>
-                      {entitlement.perIncident && (
-                        <Chip label="Per Incident" size="small" sx={{ mt: 0.5 }} />
-                      )}
-                    </TableCell>
-                    <TableCell>{entitlement.account?.name || '-'}</TableCell>
-                    <TableCell>{entitlement.process?.name || '-'}</TableCell>
-                    <TableCell>
-                      {entitlement.endDate
-                        ? new Date(entitlement.endDate).toLocaleDateString()
-                        : 'No expiry'}
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Box sx={{ width: '100%', mr: 1 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={getCaseUsagePercent(entitlement.totalCases, entitlement.remainingCases)}
-                            color={entitlement.remainingCases < 3 ? 'error' : 'primary'}
+          <>
+            {loading ? (
+              <TableSkeleton rows={5} columns={7} />
+            ) : (
+              <TableContainer component={Paper}>
+                <Table>
+                  <SortableTableHead
+                    columns={entitlementColumns}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <TableBody>
+                    {filteredEntitlements.map((entitlement) => (
+                      <TableRow
+                        key={entitlement.id}
+                        hover
+                        sx={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          setSelectedEntitlement(entitlement);
+                          setDetailOpen(true);
+                        }}
+                      >
+                        <TableCell>
+                          <Typography variant="body2" fontWeight="bold">
+                            {entitlement.name}
+                          </Typography>
+                          {entitlement.perIncident && (
+                            <Chip label="Per Incident" size="small" sx={{ mt: 0.5 }} />
+                          )}
+                        </TableCell>
+                        <TableCell>{entitlement.account?.name || '-'}</TableCell>
+                        <TableCell>{entitlement.process?.name || '-'}</TableCell>
+                        <TableCell>
+                          {entitlement.endDate
+                            ? new Date(entitlement.endDate).toLocaleDateString()
+                            : 'No expiry'}
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Box sx={{ width: '100%', mr: 1 }}>
+                              <LinearProgress
+                                variant="determinate"
+                                value={getCaseUsagePercent(entitlement.totalCases, entitlement.remainingCases)}
+                                color={entitlement.remainingCases < 3 ? 'error' : 'primary'}
+                              />
+                            </Box>
+                            <Typography variant="body2">
+                              {entitlement.totalCases - entitlement.remainingCases}/{entitlement.totalCases}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={entitlement.status}
+                            color={getStatusColor(entitlement.status) as any}
+                            size="small"
                           />
-                        </Box>
-                        <Typography variant="body2">
-                          {entitlement.totalCases - entitlement.remainingCases}/{entitlement.totalCases}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={entitlement.status}
-                        color={getStatusColor(entitlement.status) as any}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Tooltip title="Delete">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteEntitlement(entitlement.id);
-                          }}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {entitlements.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center">
-                      No entitlements found
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleDeleteEntitlement(entitlement.id)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredEntitlements.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center">
+                          No entitlements found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              totalItems={pagination.totalItems}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
+          </>
         )}
 
         {/* Processes Tab */}
         {tabValue === 1 && (
           <TableContainer component={Paper}>
             <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Process Name</TableCell>
-                  <TableCell>Description</TableCell>
-                  <TableCell>Milestones</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
+              <SortableTableHead
+                columns={processColumns}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSort={handleSort}
+              />
               <TableBody>
                 {processes.map((process) => (
-                  <TableRow key={process.id}>
+                  <TableRow key={process.id} hover sx={{ cursor: 'pointer' }}>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold">
                         {process.name}
@@ -664,22 +784,26 @@ export default function EntitlementsPage() {
       </Dialog>
 
       {/* Entitlement Detail Dialog */}
-      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={detailOpen} onClose={() => { setDetailOpen(false); setEditMode(false); }} maxWidth="md" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
-              <Typography variant="h6">{selectedEntitlement?.name}</Typography>
-              <Typography variant="body2" color="textSecondary">
-                {selectedEntitlement?.perIncident ? 'Per Incident' : 'Standard'} Entitlement
+              <Typography variant="h6">
+                {editMode ? 'Edit Entitlement' : selectedEntitlement?.name}
               </Typography>
+              {!editMode && (
+                <Typography variant="body2" color="textSecondary">
+                  {selectedEntitlement?.perIncident ? 'Per Incident' : 'Standard'} Entitlement
+                </Typography>
+              )}
             </Box>
-            <IconButton onClick={() => setDetailOpen(false)}>
+            <IconButton onClick={() => { setDetailOpen(false); setEditMode(false); }}>
               <CloseIcon />
             </IconButton>
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedEntitlement && (
+          {selectedEntitlement && !editMode && (
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="caption" color="textSecondary">Status</Typography>
@@ -745,9 +869,85 @@ export default function EntitlementsPage() {
               </Grid>
             </Grid>
           )}
+          {selectedEntitlement && editMode && (
+            <Box sx={{ mt: 1 }}>
+              <TextField
+                fullWidth
+                label="Name"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                sx={{ mb: 2 }}
+              />
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                  label="Status"
+                >
+                  <MenuItem value="ACTIVE">Active</MenuItem>
+                  <MenuItem value="EXPIRED">Expired</MenuItem>
+                  <MenuItem value="INACTIVE">Inactive</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                fullWidth
+                label="Description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                multiline
+                rows={3}
+                sx={{ mb: 2 }}
+              />
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Start Date"
+                    type="date"
+                    value={editFormData.startDate}
+                    onChange={(e) => setEditFormData({ ...editFormData, startDate: e.target.value })}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="End Date"
+                    type="date"
+                    value={editFormData.endDate}
+                    onChange={(e) => setEditFormData({ ...editFormData, endDate: e.target.value })}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Grid>
+              </Grid>
+              <TextField
+                fullWidth
+                label="Remaining Cases"
+                type="number"
+                value={editFormData.remainingCases}
+                onChange={(e) => setEditFormData({ ...editFormData, remainingCases: parseInt(e.target.value) || 0 })}
+                sx={{ mb: 2 }}
+              />
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDetailOpen(false)}>Close</Button>
+          {editMode ? (
+            <>
+              <Button onClick={() => setEditMode(false)}>Cancel</Button>
+              <Button onClick={handleSaveEdit} variant="contained" disabled={!editFormData.name}>
+                Save
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={() => { setDetailOpen(false); setEditMode(false); }}>Close</Button>
+              <Button onClick={handleStartEdit} variant="outlined" startIcon={<EditIcon />}>
+                Edit
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </DashboardLayout>
