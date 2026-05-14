@@ -198,6 +198,7 @@ const menuItems = [
     ]
   },
   { text: 'Einstein AI', icon: <AutoAwesomeIcon />, path: '/einstein' },
+  { text: 'AI Studio', icon: <AutoAwesomeIcon />, path: '/ai-studio' },
   {
     text: 'Data',
     icon: <CloudUploadIcon />,

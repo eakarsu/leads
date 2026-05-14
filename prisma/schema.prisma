@@ -906,6 +906,30 @@ model AIInsight {
   @@map("ai_insights")
 }
 
+/// Generic AI invocation log — JSONB input + output for any AI feature.
+/// Used by activity-capture, conversational agent, ensemble forecasts,
+/// playbook generator, field lineage explainer, and the global /ai/results UI.
+model AIResult {
+  id           String   @id @default(uuid())
+  feature      String
+  userId       String?
+  objectType   String?
+  objectId     String?
+  input        Json
+  output       Json
+  model        String?
+  tokensUsed   Int?
+  durationMs   Int?
+  status       String   @default("success") // success | error
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([userId, createdAt])
+  @@index([objectType, objectId])
+  @@map("ai_results")
+}
+
 // ============================================
 // NEW SALESFORCE FEATURES
 // ============================================
@@ -3913,4 +3937,56 @@ model Booking {
   @@index([calendarId])
   @@index([startTime])
   @@map("bookings")
+}
+
+// ============================================
+// WEBHOOK SYSTEM
+// ============================================
+
+model WebhookSubscription {
+  id        String   @id @default(uuid())
+  /// Human-readable label for this subscription
+  name      String?
+  /// Target URL that receives POST payloads
+  url       String
+  /// Comma-separated event types, e.g. "lead.created,deal.closed"
+  events    String[]
+  /// Optional HMAC secret for payload signing
+  secret    String?
+  isActive  Boolean  @default(true)
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([isActive])
+  @@map("webhook_subscriptions")
+}
+
+model WebhookDelivery {
+  id             String   @id @default(uuid())
+  subscriptionId String
+  eventType      String
+  payload        Json
+  /// HTTP status returned by the target (null if never reached)
+  statusCode     Int?
+  /// Raw response body from the target (truncated to 2000 chars)
+  responseBody   String?  @db.Text
+  /// Whether delivery was ultimately successful
+  success        Boolean  @default(false)
+  /// Number of attempts made (including retries)
+  attempts       Int      @default(0)
+  /// Next scheduled retry (null if done)
+  nextRetryAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscription WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([eventType])
+  @@index([success])
+  @@index([nextRetryAt])
+  @@map("webhook_deliveries")
 }

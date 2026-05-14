@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
+import { emitWebhookEvent } from '@/lib/webhooks';
 
 export async function GET(req: NextRequest) {
   try {
@@ -142,6 +143,9 @@ export async function POST(req: NextRequest) {
         client: true,
       },
     });
+
+    // Fire webhook event (non-blocking)
+    emitWebhookEvent('lead.created', { leadId: lead.id, fullName: lead.fullName, status: lead.status });
 
     return NextResponse.json(lead, { status: 201 });
   } catch (error: any) {
