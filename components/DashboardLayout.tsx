@@ -117,6 +117,7 @@ const menuItems = [
       { text: 'CPQ', path: '/cpq' },
       { text: 'Pipeline Inspection', path: '/pipeline-inspection' },
       { text: 'Revenue Intelligence', path: '/revenue-intelligence' },
+      { text: 'Deal Risk Room', path: '/deal-risk-room' },
       { text: 'Sales Cadences', path: '/sales-cadences' },
       { text: 'Conversation Insights', path: '/conversation-insights' },
     ]
