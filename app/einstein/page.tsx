@@ -106,6 +106,63 @@ interface Opportunity {
   aiConfidence?: number;
 }
 
+const normalizeInsights = (payload: unknown): AIInsight[] => {
+  const items =
+    Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === 'object' && Array.isArray((payload as { data?: unknown }).data)
+        ? (payload as { data: unknown[] }).data
+        : [];
+
+  return items.map((insight) => {
+    const item = insight as AIInsight;
+    return {
+      ...item,
+      actionItems: Array.isArray(item.actionItems) ? item.actionItems : [],
+    };
+  });
+};
+
+const readNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+const readRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+};
+
+const normalizeLeadScore = (payload: unknown): { score?: number; confidence?: number } => {
+  const data = readRecord(payload);
+  const prediction = readRecord(data.prediction);
+  const score = readNumber(data.score) ?? readNumber(prediction.score);
+  const confidence = readNumber(data.confidence) ?? readNumber(prediction.confidence);
+
+  return {
+    score,
+    confidence: confidence !== undefined && confidence > 1 ? confidence / 100 : confidence,
+  };
+};
+
 export default function EinsteinPage() {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
@@ -171,7 +228,7 @@ export default function EinsteinPage() {
       const response = await fetch('/api/ai/insights');
       if (!response.ok) throw new Error('Failed to fetch insights');
       const data = await response.json();
-      setInsights(data);
+      setInsights(normalizeInsights(data));
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -382,7 +439,7 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
       const response = await fetch('/api/ai/insights', { method: 'POST' });
       if (!response.ok) throw new Error('Failed to generate insights');
       const data = await response.json();
-      setInsights(data);
+      setInsights(normalizeInsights(data));
       setSuccess('AI insights generated successfully!');
     } catch (err: any) {
       setError(err.message);
@@ -408,21 +465,48 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
 
   const scoreAllLeads = async () => {
     setGenerating(true);
+    setError('');
+    setSuccess('');
     try {
+      let scoredCount = 0;
+      let failedCount = 0;
+
       for (const lead of leads) {
         const response = await fetch(`/api/ai/lead-score/${lead.id}`);
-        if (response.ok) {
-          const data = await response.json();
-          setLeads((prev) =>
-            prev.map((l) =>
-              l.id === lead.id
-                ? { ...l, aiScore: data.prediction?.score, aiConfidence: data.confidence }
-                : l
-            )
-          );
+        if (!response.ok) {
+          failedCount += 1;
+          continue;
         }
+
+        const data = await response.json();
+        const leadScore = normalizeLeadScore(data);
+        if (leadScore.score === undefined) {
+          failedCount += 1;
+          continue;
+        }
+
+        scoredCount += 1;
+        setLeads((prev) =>
+          prev.map((l) =>
+            l.id === lead.id
+              ? { ...l, aiScore: leadScore.score, aiConfidence: leadScore.confidence }
+              : l
+          )
+        );
       }
-      setSuccess('Lead scores generated!');
+
+      if (scoredCount === 0) {
+        throw new Error('No lead scores were generated. Check the AI configuration and try again.');
+      }
+
+      setSuccess(
+        failedCount > 0
+          ? `Generated scores for ${scoredCount} leads. ${failedCount} leads could not be scored.`
+          : `Generated scores for ${scoredCount} leads.`
+      );
+      if (failedCount > 0) {
+        setError(`${failedCount} leads could not be scored.`);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -978,7 +1062,7 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
                               <Chip label={lead.status} size="small" />
                             </TableCell>
                             <TableCell>
-                              {lead.aiScore ? (
+                              {lead.aiScore !== undefined ? (
                                 <Chip
                                   label={Math.round(lead.aiScore)}
                                   color={
@@ -996,7 +1080,7 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
                               )}
                             </TableCell>
                             <TableCell>
-                              {lead.aiConfidence
+                              {lead.aiConfidence !== undefined
                                 ? formatConfidence(lead.aiConfidence)
                                 : 'N/A'}
                             </TableCell>

@@ -64,19 +64,21 @@ export async function runAI<T = any>(
     const raw = await callAI(prompt, callOpts);
     const parsed = json ? parseAIJson<T>(raw) : ((raw as unknown) as T);
 
-    await prisma.aIResult.create({
-      data: {
-        feature,
-        userId: ctx.userId,
-        objectType,
-        objectId,
-        input: inputPayload ?? { prompt: prompt.slice(0, 4000), options: callOpts },
-        output: parsed as any,
-        model: callOpts.model || process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022',
-        durationMs: Date.now() - started,
-        status: 'success',
-      },
-    });
+    await prisma.aIResult
+      .create({
+        data: {
+          feature,
+          userId: ctx.userId,
+          objectType,
+          objectId,
+          input: inputPayload ?? { prompt: prompt.slice(0, 4000), options: callOpts },
+          output: parsed as any,
+          model: callOpts.model || process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022',
+          durationMs: Date.now() - started,
+          status: 'success',
+        },
+      })
+      .catch(() => {});
 
     return parsed;
   } catch (err: any) {

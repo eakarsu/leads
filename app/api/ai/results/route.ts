@@ -23,25 +23,44 @@ export async function GET(req: NextRequest) {
     if (v) where[k] = v;
   }
 
-  const [items, total] = await Promise.all([
-    prisma.aIResult.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.aIResult.count({ where }),
-  ]);
+  try {
+    const [items, total] = await Promise.all([
+      prisma.aIResult.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.aIResult.count({ where }),
+    ]);
 
-  return NextResponse.json({
-    data: items,
-    pagination: {
-      page,
-      pageSize,
-      totalItems: total,
-      totalPages: Math.ceil(total / pageSize),
-      hasNextPage: page * pageSize < total,
-      hasPrevPage: page > 1,
-    },
-  });
+    return NextResponse.json({
+      data: items,
+      pagination: {
+        page,
+        pageSize,
+        totalItems: total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        hasNextPage: page * pageSize < total,
+        hasPrevPage: page > 1,
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2021' || String(err?.message || '').includes('ai_results')) {
+      return NextResponse.json({
+        data: [],
+        historyUnavailable: true,
+        pagination: {
+          page,
+          pageSize,
+          totalItems: 0,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      });
+    }
+
+    return NextResponse.json({ error: err.message || 'Failed to fetch AI results' }, { status: 500 });
+  }
 }

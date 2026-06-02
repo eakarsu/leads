@@ -1,3 +1,5 @@
+import { parseAIJson } from './parseAIJson';
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
 
@@ -136,11 +138,18 @@ Respond with ONLY a JSON object in this format:
   const response = await callOpenRouter(prompt, systemPrompt);
 
   try {
-    const parsed = JSON.parse(response);
+    const parsed = parseAIJson<{ score?: number | string; confidence?: number | string; reasoning?: string }>(response);
+    const score = Number(parsed.score);
+    const confidence = Number(parsed.confidence);
+
+    if (!Number.isFinite(score)) {
+      throw new Error('Lead score response did not include a numeric score');
+    }
+
     return {
-      score: Math.min(100, Math.max(0, parsed.score)),
-      confidence: Math.min(1, Math.max(0, parsed.confidence)),
-      reasoning: parsed.reasoning,
+      score: Math.min(100, Math.max(0, score)),
+      confidence: Math.min(1, Math.max(0, Number.isFinite(confidence) ? confidence : 0.5)),
+      reasoning: parsed.reasoning || 'No reasoning provided',
     };
   } catch (error) {
     console.error('Failed to parse lead score AI response:', error);
@@ -182,9 +191,15 @@ Respond with ONLY a JSON object in this format:
   const response = await callOpenRouter(prompt, systemPrompt);
 
   try {
-    const parsed = JSON.parse(response);
+    const parsed = parseAIJson<{
+      predictedCloseDate?: string;
+      predictedAmount?: number | string;
+      winProbability?: number | string;
+      confidence?: number | string;
+      reasoning?: string;
+    }>(response);
     // Normalize winProbability to 0-100 range
-    let winProb = parsed.winProbability;
+    let winProb = Number(parsed.winProbability);
     if (winProb !== undefined && winProb !== null) {
       // If it's in 0-1 range, convert to 0-100
       if (winProb > 0 && winProb <= 1) {
@@ -196,11 +211,21 @@ Respond with ONLY a JSON object in this format:
       winProb = 50; // Default fallback
     }
 
+    if (!Number.isFinite(winProb)) {
+      winProb = 50;
+    }
+
+    const predictedAmount = Number(parsed.predictedAmount);
+    const confidence = Number(parsed.confidence);
+    const fallbackCloseDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
     return {
-      predictedCloseDate: parsed.predictedCloseDate,
-      predictedAmount: parsed.predictedAmount,
+      predictedCloseDate: parsed.predictedCloseDate || opportunity.expectedCloseDate || fallbackCloseDate,
+      predictedAmount: Number.isFinite(predictedAmount) ? predictedAmount : opportunity.amount,
       winProbability: winProb,
-      confidence: Math.min(1, Math.max(0, parsed.confidence || 0.5)),
+      confidence: Math.min(1, Math.max(0, Number.isFinite(confidence) ? confidence : 0.5)),
       reasoning: parsed.reasoning || 'No reasoning provided',
     };
   } catch (error) {

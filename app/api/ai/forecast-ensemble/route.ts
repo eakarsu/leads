@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const runs = Math.min(5, Math.max(2, Number(runsRaw)));
 
     const opps = await prisma.opportunity.findMany({
-      where: { stage: { notIn: ['CLOSED_WON', 'CLOSED_LOST', 'Closed Won', 'Closed Lost'] } as any },
+      where: { stage: { notIn: ['CLOSED_WON', 'CLOSED_LOST'] } },
       take: 200,
       select: { name: true, stage: true, amount: true, probability: true, expectedCloseDate: true },
     });
@@ -49,7 +49,8 @@ a 6-${period} forecast. Return ONLY JSON: { "${period}ly": [{"label":"YYYY-MM" o
     for (const r of successful) {
       const arr = (r as any)[`${period}ly`] || [];
       for (const row of arr) {
-        const label = String(row.label);
+        const label = String(row.label || row.month || row.quarter || row.period || '').trim();
+        if (!label) continue;
         if (!byLabel[label]) byLabel[label] = [];
         byLabel[label].push(Number(row.predicted) || 0);
       }
@@ -73,6 +74,7 @@ a 6-${period} forecast. Return ONLY JSON: { "${period}ly": [{"label":"YYYY-MM" o
       ensemble,
       runs,
       successful: successful.length,
+      failed: results.length - successful.length,
       raw: results,
     });
   } catch (err: any) {
