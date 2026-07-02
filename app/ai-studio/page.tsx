@@ -29,6 +29,8 @@ const agentPresets = [
   { label: 'Pipeline Summary', value: 'Summarize the current sales pipeline by stage and call out the biggest revenue concentration risks.' },
   { label: 'Stalled Deals', value: 'List opportunities that have not moved in 30 days and recommend the next follow-up action for each.' },
   { label: 'Top Leads', value: 'Show the top 10 newest qualified leads and summarize which ones should be contacted first.' },
+  { label: 'Create Lead', value: 'Create a new lead named Taylor Morgan, email taylor.morgan@example.test, company Acme Expansion Team, title VP Operations, status NEW.' },
+  { label: 'Create Task', value: 'Create a high priority task for me called Review AI-created lead with a due date tomorrow.' },
 ];
 
 const activityPresets = [
@@ -366,11 +368,11 @@ export default function AIStudioPage() {
     <DashboardLayout>
       <Box sx={{ p: 3 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="h4">AI Studio</Typography>
+          <Typography variant="h4">Agent Studio</Typography>
           <Chip label="claude-3-5-sonnet · 20 req/hr per user" size="small" />
         </Stack>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-          <Tab value="agent" label="Conversational Agent" />
+          <Tab value="agent" label="Agentforce Agent" />
           <Tab value="activity" label="Activity Capture" />
           <Tab value="forecast" label="Ensemble Forecast" />
           <Tab value="playbook" label="Cadence Playbook" />
@@ -410,7 +412,7 @@ function AgentPanel() {
     <Card>
       <CardContent>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Ask anything: "summarize Q3 pipeline by territory" · "list stalled opps"
+          Ask the Agentforce-style CRM agent to summarize, search, and safely update CRM records.
         </Typography>
         <Box display="flex" flexWrap="wrap" gap={1} mb={2}>
           {agentPresets.map((preset) => (

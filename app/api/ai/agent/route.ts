@@ -18,6 +18,10 @@ const TOOL_SCHEMA = `Tools (return ONE of these in your "tool" field):
 - top_leads: { tool: "top_leads", args: { limit: number, status?: string } }
 - forecast_by_stage: { tool: "forecast_by_stage", args: {} }
 - create_followups: { tool: "create_followups", args: { ownerId?: string, opportunityIds: string[] } }
+- create_lead: { tool: "create_lead", args: { fullName: string, email?: string, company?: string, title?: string, phone?: string, clientId?: string, status?: "NEW"|"CONTACTED"|"QUALIFIED"|"UNQUALIFIED" } }
+- update_lead: { tool: "update_lead", args: { id: string, status?: "NEW"|"CONTACTED"|"QUALIFIED"|"UNQUALIFIED"|"WON"|"LOST", qualificationScore?: number, notes?: string } }
+- create_task: { tool: "create_task", args: { subject: string, description?: string, dueDate?: "YYYY-MM-DD", priority?: "LOW"|"MEDIUM"|"HIGH"|"URGENT", assignedTo?: string, opportunityId?: string, contactId?: string, relatedTo?: string } }
+- update_opportunity: { tool: "update_opportunity", args: { id: string, stage?: "PROSPECTING"|"QUALIFICATION"|"NEEDS_ANALYSIS"|"PROPOSAL"|"NEGOTIATION"|"CLOSED_WON"|"CLOSED_LOST", probability?: number, nextSteps?: string, expectedCloseDate?: "YYYY-MM-DD" } }
 - find_record: { tool: "find_record", args: { entity: "Lead"|"Contact"|"Opportunity", query: string } }
 - noop: { tool: "noop", args: {}, summary: "..." }`;
 
@@ -52,7 +56,7 @@ ${TOOL_SCHEMA}`;
     // Execute tool
     let data: any = null;
     try {
-      data = await executeTool(plan.tool, plan.args || {});
+      data = await executeTool(plan.tool, plan.args || {}, auth.userId);
     } catch (e: any) {
       data = { error: e.message };
     }
@@ -63,7 +67,7 @@ ${TOOL_SCHEMA}`;
   }
 }
 
-async function executeTool(tool: string, args: any): Promise<any> {
+async function executeTool(tool: string, args: any, userId: string): Promise<any> {
   switch (tool) {
     case 'pipeline_summary': {
       // territoryId filter is best-effort — Opportunity may not have it.
@@ -131,11 +135,137 @@ async function executeTool(tool: string, args: any): Promise<any> {
       return [];
     }
     case 'create_followups': {
-      // Returns a draft list (does not yet write Tasks — caller can confirm)
-      return { draft: (args.opportunityIds || []).map((id: string) => ({ opportunityId: id, type: 'CALL', subject: 'Follow-up' })) };
+      const opportunityIds = Array.isArray(args.opportunityIds) ? args.opportunityIds.slice(0, 10) : [];
+      const tasks = await Promise.all(
+        opportunityIds.map((id: string) =>
+          prisma.task.create({
+            data: {
+              subject: 'Follow up on stalled opportunity',
+              description: 'Created by Agentforce agent from a follow-up request.',
+              priority: 'HIGH',
+              status: 'NOT_STARTED',
+              opportunityId: id,
+              assignedTo: args.ownerId || userId,
+              createdBy: userId,
+              dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            },
+          })
+        )
+      );
+      return { created: tasks.length, tasks };
+    }
+    case 'create_lead': {
+      if (!args.fullName) throw new Error('fullName is required to create a lead');
+      const clientId = args.clientId || (await getDefaultClientId());
+      if (!clientId) throw new Error('No client account exists. Create a client before creating leads.');
+
+      const lead = await prisma.lead.create({
+        data: {
+          clientId,
+          fullName: String(args.fullName),
+          email: args.email ? String(args.email) : null,
+          company: args.company ? String(args.company) : null,
+          title: args.title ? String(args.title) : null,
+          phone: args.phone ? String(args.phone) : null,
+          status: normalizeLeadStatus(args.status),
+          qualificationScore: normalizeScore(args.qualificationScore),
+          leadSource: 'MANUAL',
+          submittedBy: userId,
+          notes: 'Created by Agentforce agent.',
+          customFields: { createdByAgent: true },
+        },
+      });
+      return { created: true, recordType: 'Lead', record: lead };
+    }
+    case 'update_lead': {
+      if (!args.id) throw new Error('id is required to update a lead');
+      const existing = await prisma.lead.findUnique({ where: { id: String(args.id) } });
+      if (!existing) throw new Error('Lead not found');
+
+      const data: any = {};
+      if (args.status) data.status = normalizeLeadStatus(args.status);
+      if (args.qualificationScore !== undefined) data.qualificationScore = normalizeScore(args.qualificationScore);
+      if (args.notes !== undefined) data.notes = String(args.notes);
+
+      const updated = await prisma.lead.update({ where: { id: existing.id }, data });
+      await recordFieldChanges('Lead', existing.id, existing, data, userId);
+      return { updated: true, recordType: 'Lead', record: updated };
+    }
+    case 'create_task': {
+      if (!args.subject) throw new Error('subject is required to create a task');
+      const task = await prisma.task.create({
+        data: {
+          subject: String(args.subject),
+          description: args.description ? String(args.description) : null,
+          dueDate: args.dueDate ? new Date(args.dueDate) : null,
+          priority: normalizeTaskPriority(args.priority),
+          status: 'NOT_STARTED',
+          assignedTo: args.assignedTo || userId,
+          createdBy: userId,
+          contactId: args.contactId || null,
+          opportunityId: args.opportunityId || null,
+          relatedTo: args.relatedTo || null,
+        },
+      });
+      return { created: true, recordType: 'Task', record: task };
+    }
+    case 'update_opportunity': {
+      if (!args.id) throw new Error('id is required to update an opportunity');
+      const existing = await prisma.opportunity.findUnique({ where: { id: String(args.id) } });
+      if (!existing) throw new Error('Opportunity not found');
+
+      const data: any = {};
+      if (args.stage) data.stage = normalizeOpportunityStage(args.stage);
+      if (args.probability !== undefined) data.probability = Math.min(100, Math.max(0, Number(args.probability) || 0));
+      if (args.nextSteps !== undefined) data.nextSteps = String(args.nextSteps);
+      if (args.expectedCloseDate) data.expectedCloseDate = new Date(args.expectedCloseDate);
+
+      const updated = await prisma.opportunity.update({ where: { id: existing.id }, data });
+      await recordFieldChanges('Opportunity', existing.id, existing, data, userId);
+      return { updated: true, recordType: 'Opportunity', record: updated };
     }
     case 'noop':
     default:
       return null;
   }
+}
+
+async function getDefaultClientId() {
+  const client = await prisma.clientCompany.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+  return client?.id;
+}
+
+function normalizeLeadStatus(value: any) {
+  const allowed = ['NEW', 'CONTACTED', 'QUALIFIED', 'UNQUALIFIED', 'WON', 'LOST'];
+  return allowed.includes(String(value)) ? String(value) as any : 'NEW';
+}
+
+function normalizeOpportunityStage(value: any) {
+  const allowed = ['PROSPECTING', 'QUALIFICATION', 'NEEDS_ANALYSIS', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST'];
+  return allowed.includes(String(value)) ? String(value) as any : 'PROSPECTING';
+}
+
+function normalizeTaskPriority(value: any) {
+  const allowed = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+  return allowed.includes(String(value)) ? String(value) as any : 'MEDIUM';
+}
+
+function normalizeScore(value: any) {
+  return Math.min(100, Math.max(0, Number(value) || 0));
+}
+
+async function recordFieldChanges(objectType: string, objectId: string, existing: any, data: any, userId: string) {
+  const changes = Object.entries(data).filter(([key, value]) => String(existing[key] ?? '') !== String(value ?? ''));
+  if (changes.length === 0) return;
+
+  await prisma.fieldHistory.createMany({
+    data: changes.map(([fieldName, newValue]) => ({
+      objectType,
+      objectId,
+      fieldName,
+      oldValue: existing[fieldName] === null || existing[fieldName] === undefined ? null : String(existing[fieldName]),
+      newValue: newValue === null || newValue === undefined ? null : String(newValue),
+      changedBy: userId,
+    })),
+  });
 }

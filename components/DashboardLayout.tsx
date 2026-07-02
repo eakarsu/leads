@@ -198,14 +198,15 @@ const menuItems = [
       { text: 'Approvals', path: '/approvals' },
     ]
   },
-  { text: 'Einstein AI', icon: <AutoAwesomeIcon />, path: '/einstein' },
-  { text: 'AI Studio', icon: <AutoAwesomeIcon />, path: '/ai-studio' },
+  { text: 'Agentforce', icon: <AutoAwesomeIcon />, path: '/einstein' },
+  { text: 'Agent Studio', icon: <AutoAwesomeIcon />, path: '/ai-studio' },
   {
     text: 'Data',
     icon: <CloudUploadIcon />,
     path: '/data-import',
     submenu: [
       { text: 'Data Import', path: '/data-import' },
+      { text: 'Data Mask & Seed', path: '/data-mask-seed' },
       { text: 'Custom Objects', path: '/custom-objects' },
     ]
   },
@@ -225,6 +226,9 @@ const menuItems = [
     icon: <SecurityIcon />,
     path: '/roles',
     submenu: [
+      { text: 'Platform Setup Center', path: '/platform-setup' },
+      { text: 'Setup with AI', path: '/setup-ai' },
+      { text: 'Security Center', path: '/security-center' },
       { text: 'Roles & Hierarchy', path: '/roles' },
       { text: 'Validation Rules', path: '/validation-rules' },
     ]

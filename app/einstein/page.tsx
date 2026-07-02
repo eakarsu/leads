@@ -743,7 +743,7 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Box display="flex" alignItems="center" gap={1}>
             <AutoAwesomeIcon fontSize="large" color="primary" />
-            <Typography variant="h4">Einstein AI</Typography>
+            <Typography variant="h4">Agentforce Intelligence</Typography>
           </Box>
           <Box display="flex" gap={2}>
             <Button
@@ -777,7 +777,7 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
           <Box mb={2}>
             <LinearProgress />
             <Typography variant="body2" color="text.secondary" align="center" mt={1}>
-              Einstein AI is analyzing...
+              Agentforce Intelligence is analyzing...
             </Typography>
           </Box>
         )}
@@ -799,9 +799,9 @@ Respond with ONLY a JSON array of 3 short insight strings (max 15 words each):
           <Tab label="Next Best Actions" />
           <Tab label="Conversation Insights" />
           <Tab label="Activity Capture" />
-          <Tab label="Einstein Search" />
+          <Tab label="Agentforce Search" />
           <Tab label="Einstein Bots" />
-          <Tab label="Einstein Analytics" />
+          <Tab label="Agentforce Analytics" />
           <Tab label="Case Classification" />
           <Tab label="Article Recommendations" />
         </Tabs>
@@ -1765,7 +1765,7 @@ Customer: Thanks, bye.`)}
           </Grid>
         )}
 
-        {/* Tab 10: Einstein Search */}
+        {/* Tab 10: Agentforce Search */}
         {tabValue === 10 && (
           <Grid container spacing={3}>
             <Grid size={{ xs: 12 }}>
@@ -1931,7 +1931,7 @@ Customer: Thanks, bye.`)}
           </Grid>
         )}
 
-        {/* Tab 12: Einstein Analytics */}
+        {/* Tab 12: Agentforce Analytics */}
         {tabValue === 12 && (
           <Grid container spacing={3}>
             <Grid size={{ xs: 12 }}>
@@ -1939,7 +1939,7 @@ Customer: Thanks, bye.`)}
                 <CardContent>
                   <Box display="flex" alignItems="center" gap={1} mb={2}>
                     <BarChartIcon color="primary" />
-                    <Typography variant="h6">Einstein Analytics</Typography>
+                    <Typography variant="h6">Agentforce Analytics</Typography>
                   </Box>
                   <Typography variant="body2" color="text.secondary" paragraph>
                     Advanced analytics dashboards with AI-powered insights
