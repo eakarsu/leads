@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
+import { ensureDefaultWorkflowRules } from '@/lib/defaultFeatureSeeds';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest) {
     }
 
     const paginationParams = parsePaginationParams(req);
+    await ensureDefaultWorkflowRules();
 
     const { searchParams } = new URL(req.url);
     const objectType = searchParams.get('objectType');
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json(buildPaginatedResponse(workflowRules, total, paginationParams));
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching workflow rules:', error);
     return NextResponse.json(
       { error: 'Failed to fetch workflow rules' },
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
       conditions,
       actions,
       isActive,
+      priority,
     } = body;
 
     const workflowRule = await prisma.workflowRule.create({
@@ -68,11 +71,12 @@ export async function POST(req: NextRequest) {
         conditions,
         actions,
         isActive: isActive !== undefined ? isActive : true,
+        priority: priority !== undefined ? priority : 0,
       },
     });
 
     return NextResponse.json(workflowRule, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error creating workflow rule:', error);
     return NextResponse.json(
       { error: 'Failed to create workflow rule' },

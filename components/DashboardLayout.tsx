@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
@@ -25,6 +25,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import SearchIcon from '@mui/icons-material/Search';
 import GlobalSearch from './GlobalSearch';
 import NotificationBell from './NotificationBell';
+import FloatingCRMChatbot from './FloatingCRMChatbot';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import BusinessIcon from '@mui/icons-material/Business';
 import CampaignIcon from '@mui/icons-material/Campaign';
@@ -50,6 +51,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import SendIcon from '@mui/icons-material/Send';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import ForumIcon from '@mui/icons-material/Forum';
 import WidgetsIcon from '@mui/icons-material/Widgets';
 import BarChartIcon from '@mui/icons-material/BarChart';
@@ -86,7 +88,19 @@ import { Collapse } from '@mui/material';
 
 const drawerWidth = 240;
 
-const menuItems = [
+type MenuSubItem = {
+  text: string;
+  path: string;
+};
+
+type MenuItemConfig = {
+  text: string;
+  icon: ReactNode;
+  path: string;
+  submenu?: MenuSubItem[];
+};
+
+const menuItems: MenuItemConfig[] = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Clients', icon: <BusinessIcon />, path: '/clients' },
   { text: 'Campaigns', icon: <CampaignIcon />, path: '/campaigns' },
@@ -118,6 +132,10 @@ const menuItems = [
       { text: 'Pipeline Inspection', path: '/pipeline-inspection' },
       { text: 'Revenue Intelligence', path: '/revenue-intelligence' },
       { text: 'Deal Risk Room', path: '/deal-risk-room' },
+      { text: 'Opportunity Contact Roles', path: '/opportunity-contact-roles' },
+      { text: 'Financial Sync', path: '/financial-sync' },
+      { text: 'Price Books', path: '/price-books' },
+      { text: 'Sales Territories', path: '/territories' },
       { text: 'Sales Cadences', path: '/sales-cadences' },
       { text: 'Conversation Insights', path: '/conversation-insights' },
     ]
@@ -125,10 +143,13 @@ const menuItems = [
   {
     text: 'Service',
     icon: <SupportAgentIcon />,
-    path: '/cases',
-    submenu: [
-      { text: 'Cases', path: '/cases' },
-      { text: 'Knowledge Base', path: '/knowledge' },
+	    path: '/cases',
+	    submenu: [
+	      { text: 'Cases', path: '/cases' },
+	      { text: 'Case Queues', path: '/case-queues' },
+	      { text: 'Case Milestones', path: '/case-milestones' },
+	      { text: 'Service Operations', path: '/service-operations' },
+	      { text: 'Knowledge Base', path: '/knowledge' },
       { text: 'Entitlements', path: '/entitlements' },
       { text: 'Assets', path: '/assets' },
       { text: 'Live Chat', path: '/live-chat' },
@@ -157,6 +178,7 @@ const menuItems = [
       { text: 'Field Service Assets', path: '/field-service-assets' },
       { text: 'Maintenance Plans', path: '/maintenance-plans' },
       { text: 'Scheduling Policies', path: '/scheduling-policies' },
+      { text: 'Mobile Field Service', path: '/mobile-field-service' },
     ]
   },
   {
@@ -165,6 +187,7 @@ const menuItems = [
     path: '/email-center',
     submenu: [
       { text: 'Email Center', path: '/email-center' },
+      { text: 'Email Templates', path: '/email-templates' },
       { text: 'Mass Email', path: '/mass-email' },
       { text: 'Web Forms', path: '/web-forms' },
       { text: 'Journeys', path: '/journeys' },
@@ -185,8 +208,26 @@ const menuItems = [
       { text: 'Customer Portal', path: '/customer-portal' },
     ]
   },
-  { text: 'Activities', icon: <TimelineIcon />, path: '/activities' },
-  { text: 'Chatter', icon: <ForumIcon />, path: '/chatter' },
+  {
+    text: 'Activities',
+    icon: <TimelineIcon />,
+    path: '/activities',
+    submenu: [
+      { text: 'Activities', path: '/activities' },
+      { text: 'CRM Timeline', path: '/timeline' },
+      { text: 'Record Activity Center', path: '/record-activity' },
+    ],
+  },
+	  {
+	    text: 'Chatter',
+	    icon: <ForumIcon />,
+	    path: '/chatter',
+	    submenu: [
+	      { text: 'Chatter Feed', path: '/chatter' },
+	      { text: 'Chatter Groups', path: '/chatter-groups' },
+	    ],
+	  },
+  { text: 'Notifications', icon: <NotificationsActiveIcon />, path: '/notifications' },
   { text: 'Files', icon: <FolderIcon />, path: '/files' },
   {
     text: 'Automation',
@@ -194,7 +235,9 @@ const menuItems = [
     path: '/workflows',
     submenu: [
       { text: 'Workflows', path: '/workflows' },
+      { text: 'Workflow Rules', path: '/workflow-rules' },
       { text: 'Process Builder', path: '/process-builder' },
+      { text: 'Lead Assignment', path: '/lead-assignment' },
       { text: 'Approvals', path: '/approvals' },
     ]
   },
@@ -207,6 +250,10 @@ const menuItems = [
     submenu: [
       { text: 'Data Import', path: '/data-import' },
       { text: 'Data Mask & Seed', path: '/data-mask-seed' },
+      { text: 'Duplicate Management', path: '/duplicates' },
+      { text: 'AppExchange', path: '/appexchange' },
+      { text: 'Vertical Solution Packs', path: '/vertical-pack' },
+      { text: 'Privacy Benchmarks', path: '/privacy-benchmark' },
       { text: 'Custom Objects', path: '/custom-objects' },
     ]
   },
@@ -235,7 +282,15 @@ const menuItems = [
   },
   { text: 'Loyalty', icon: <LoyaltyIcon />, path: '/loyalty' },
   { text: 'Maps', icon: <MapIcon />, path: '/maps' },
-  { text: 'Scheduler', icon: <BookOnlineIcon />, path: '/scheduler' },
+	  {
+	    text: 'Scheduler',
+	    icon: <BookOnlineIcon />,
+	    path: '/scheduler',
+	    submenu: [
+	      { text: 'Scheduler', path: '/scheduler' },
+	      { text: 'Booking Calendars', path: '/booking-calendars' },
+	    ],
+	  },
   {
     text: 'Settings',
     icon: <SettingsIcon />,
@@ -247,7 +302,7 @@ const menuItems = [
   },
 ];
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -295,7 +350,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <List>
         {menuItems.map((item) => {
           const isActive = !item.submenu && pathname === item.path;
-          const hasActiveChild = item.submenu?.some((sub: any) => pathname === sub.path);
+          const hasActiveChild = item.submenu?.some((sub) => pathname === sub.path);
 
           return (
             <div key={item.text}>
@@ -330,7 +385,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {item.submenu && (
                 <Collapse in={openSubmenus[item.text] || hasActiveChild} timeout="auto" unmountOnExit>
                   <List component="div" disablePadding>
-                    {item.submenu.map((subItem: any) => {
+                    {item.submenu.map((subItem) => {
                       const isSubActive = pathname === subItem.path;
                       return (
                         <ListItemButton
@@ -470,6 +525,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </Box>
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <FloatingCRMChatbot />
     </Box>
   );
 }

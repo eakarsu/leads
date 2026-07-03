@@ -63,6 +63,13 @@ function LoginForm() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [loggingInAs, setLoggingInAs] = useState('');
+  const [sessionCleared, setSessionCleared] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/auth/clear-session', { method: 'POST' }).finally(() => {
+      setSessionCleared(true);
+    });
+  }, []);
 
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
@@ -82,6 +89,11 @@ function LoginForm() {
     setLoading(true);
 
     try {
+      if (!sessionCleared) {
+        await fetch('/api/auth/clear-session', { method: 'POST' });
+        setSessionCleared(true);
+      }
+
       const result = await signIn('credentials', {
         email,
         password,
@@ -94,7 +106,7 @@ function LoginForm() {
         router.push('/dashboard');
         router.refresh();
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -106,6 +118,11 @@ function LoginForm() {
     setLoggingInAs(accountEmail);
 
     try {
+      if (!sessionCleared) {
+        await fetch('/api/auth/clear-session', { method: 'POST' });
+        setSessionCleared(true);
+      }
+
       const result = await signIn('credentials', {
         email: accountEmail,
         password: 'password123',
@@ -119,7 +136,7 @@ function LoginForm() {
         router.push('/dashboard');
         router.refresh();
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
       setLoggingInAs('');
     }

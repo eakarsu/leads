@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { ensureDefaultLeadAssignmentRules } from '@/lib/defaultFeatureSeeds';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const isActive = searchParams.get('isActive');
+    await ensureDefaultLeadAssignmentRules(session.user.id);
 
     const rules = await prisma.leadAssignmentRule.findMany({
       where: {

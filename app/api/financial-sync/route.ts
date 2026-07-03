@@ -18,6 +18,38 @@ interface RevRecEntry {
 
 const ledger: RevRecEntry[] = [];
 
+function ensureSeedLedger() {
+  if (ledger.length >= 15) return;
+  const names = [
+    'Acme',
+    'Northstar',
+    'Pioneer',
+    'Summit',
+    'Urban Retail',
+    'BluePeak',
+    'Harbor',
+    'Keystone',
+    'Evergreen',
+    'Atlas',
+    'Canyon',
+    'Metro',
+    'Cobalt',
+    'Vertex',
+    'BrightPath',
+  ];
+  names.slice(ledger.length).forEach((name, index) => {
+    ledger.push({
+      id: `rev_seed_${String(ledger.length + 1).padStart(3, '0')}`,
+      source: index % 3 === 0 ? 'invoice' : 'opportunity',
+      sourceId: `${index % 3 === 0 ? 'INV' : 'OPP'}-SEED-${String(ledger.length + 1).padStart(3, '0')}`,
+      amount: 12000 + ledger.length * 4500,
+      recognizedAt: new Date(Date.now() - ledger.length * 86400000).toISOString(),
+      glAccount: ['4000-Revenue', '4010-Services', '4020-Subscriptions'][ledger.length % 3],
+      status: ['posted', 'queued', 'failed'][ledger.length % 3] as RevRecEntry['status'],
+    });
+  });
+}
+
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -25,18 +57,13 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as { opportunityId?: string; force?: boolean };
   if (!body.opportunityId) return NextResponse.json({ error: 'opportunityId required' }, { status: 400 });
 
-  let opp: { id: string; amount: number | null; name: string; stage?: string } | null = null;
-  try {
-    opp = await (prisma as any).opportunity.findUnique({
-      where: { id: body.opportunityId },
-      select: { id: true, amount: true, name: true, stage: true },
-    });
-  } catch {
-    // schema variance — proceed with a stub
-  }
+  const opp = await prisma.opportunity.findUnique({
+    where: { id: body.opportunityId },
+    select: { id: true, amount: true, name: true, stage: true },
+  });
   if (!opp) return NextResponse.json({ error: 'opportunity not found' }, { status: 404 });
 
-  if (opp.stage && opp.stage !== 'Closed Won' && !body.force) {
+  if (opp.stage && opp.stage !== 'CLOSED_WON' && !body.force) {
     return NextResponse.json({ error: 'opportunity not Closed Won', currentStage: opp.stage }, { status: 409 });
   }
 
@@ -67,5 +94,6 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  ensureSeedLedger();
   return NextResponse.json({ entries: ledger.slice(-100) });
 }

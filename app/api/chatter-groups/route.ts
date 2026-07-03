@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import { Prisma } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
+import { ensureDefaultChatterGroups } from '@/lib/defaultFeatureSeeds';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,13 +14,15 @@ export async function GET(req: NextRequest) {
     }
 
     const paginationParams = parsePaginationParams(req);
+    await ensureDefaultChatterGroups(session.user.id);
 
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
     const myGroups = searchParams.get('myGroups') === 'true';
 
-    const where: any = {};
-    if (type) where.type = type;
+    const where: Prisma.ChatterGroupWhereInput = {};
+    if (type === 'PUBLIC') where.isPublic = true;
+    if (type === 'PRIVATE') where.isPublic = false;
     if (myGroups) {
       where.members = { some: { userId: session.user.id } };
     }
@@ -54,7 +58,7 @@ export async function GET(req: NextRequest) {
     }));
 
     return NextResponse.json(buildPaginatedResponse(groupsWithMembership, total, paginationParams));
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching chatter groups:', error);
     return NextResponse.json({ error: 'Failed to fetch groups' }, { status: 500 });
   }
@@ -102,7 +106,7 @@ export async function POST(req: NextRequest) {
     const groupWithOwner = { ...group, owner };
 
     return NextResponse.json(groupWithOwner, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error creating chatter group:', error);
     return NextResponse.json({ error: 'Failed to create group' }, { status: 500 });
   }
@@ -222,7 +226,7 @@ export async function PUT(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error processing group action:', error);
     return NextResponse.json({ error: 'Failed to process action' }, { status: 500 });
   }
