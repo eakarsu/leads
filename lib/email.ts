@@ -1,6 +1,16 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function configuredEmailClient() {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) throw new Error('RESEND_API_KEY is required to send email');
+  return new Resend(apiKey);
+}
+
+function configuredSender(override?: string) {
+  const sender = override?.trim() || process.env.EMAIL_FROM?.trim();
+  if (!sender) throw new Error('EMAIL_FROM is required to send email');
+  return sender;
+}
 
 export interface SendEmailParams {
   to: string | string[];
@@ -18,8 +28,9 @@ export interface SendEmailParams {
 
 export async function sendEmail(params: SendEmailParams) {
   try {
+    const resend = configuredEmailClient();
     const { data, error } = await resend.emails.send({
-      from: params.from || process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+      from: configuredSender(params.from),
       to: Array.isArray(params.to) ? params.to : [params.to],
       subject: params.subject,
       html: params.html,
@@ -35,9 +46,9 @@ export async function sendEmail(params: SendEmailParams) {
     }
 
     return { success: true, data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error sending email:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'Email delivery failed' };
   }
 }
 

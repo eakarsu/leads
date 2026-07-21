@@ -1,75 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { handleApiError } from '@/lib/apiErrors';
-import { emitWebhookEvent } from '@/lib/webhooks';
+import { apiError, parseJson } from '@/lib/lead-operations/api';
+import { requireOperationsActor, scopedClientId } from '@/lib/lead-operations/auth';
+import { LeadOperationsError } from '@/lib/lead-operations/errors';
+import { rolesAllowedToMutate, updateLeadProfile } from '@/lib/lead-operations/service';
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+const updateSchema = z.object({
+  clientId: z.string().uuid().optional(),
+  expectedVersion: z.number().int().positive(),
+  fullName: z.string().trim().min(2).max(160).optional(),
+  company: z.string().trim().max(200).nullable().optional(),
+  title: z.string().trim().max(200).nullable().optional(),
+  email: z.string().trim().max(254).nullable().optional(),
+  phone: z.string().trim().max(40).nullable().optional(),
+}).strict();
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const actor = await requireOperationsActor();
+    const clientId = scopedClientId(actor, request.nextUrl.searchParams.get('clientId'));
     const { id } = await params;
-    const record = await prisma.lead.findUnique({ where: { id } });
-    if (!record) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-    return NextResponse.json(record);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
-
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const { id } = await params;
-    const body = await req.json();
-    const record = await prisma.lead.update({ where: { id }, data: body });
-
-    // Invalidate the 24-hour lead score cache whenever lead data changes
-    await prisma.aIPrediction.deleteMany({
-      where: {
-        objectType: 'Lead',
-        objectId: id,
-        predictionType: 'LEAD_SCORE',
+    const lead = await prisma.lead.findFirst({
+      where: { id, clientId },
+      include: {
+        governance: true,
+        consents: { orderBy: { effectiveAt: 'desc' } },
+        outreach: { orderBy: { createdAt: 'desc' } },
+        syncRecords: { include: { connector: { select: { id: true, kind: true, provider: true } } } },
+        attributions: { orderBy: { convertedAt: 'desc' } },
+        activities: { orderBy: { timestamp: 'desc' }, take: 50 },
       },
     });
-
-    // Fire webhook event (non-blocking)
-    emitWebhookEvent('lead.updated', { leadId: record.id, status: record.status });
-
-    return NextResponse.json(record);
-  } catch (error) {
-    return handleApiError(error);
-  }
+    if (!lead) throw new LeadOperationsError('LEAD_NOT_FOUND', 'Lead not found', 404);
+    return NextResponse.json(lead);
+  } catch (error) { return apiError(error); }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const actor = await requireOperationsActor(rolesAllowedToMutate());
+    const body = await parseJson(request, updateSchema);
+    const clientId = scopedClientId(actor, body.clientId);
     const { id } = await params;
+    const lead = await updateLeadProfile(prisma, { ...body, clientId, leadId: id, actorId: actor.id });
+    return NextResponse.json(lead);
+  } catch (error) { return apiError(error); }
+}
 
-    // Clear cached lead score before deleting
-    await prisma.aIPrediction.deleteMany({
-      where: { objectType: 'Lead', objectId: id, predictionType: 'LEAD_SCORE' },
-    });
-
-    await prisma.lead.delete({ where: { id } });
-
-    // Fire webhook event (non-blocking)
-    emitWebhookEvent('lead.deleted', { leadId: id });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    return handleApiError(error);
-  }
+export async function DELETE() {
+  return NextResponse.json({ error: 'ARCHIVE_REQUIRED', message: 'Leads are retained for audit; transition to DISQUALIFIED instead' }, { status: 405 });
 }

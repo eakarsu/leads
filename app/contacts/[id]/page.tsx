@@ -28,7 +28,6 @@ import DashboardLayout from '@/components/DashboardLayout';
 import NotesSection from '@/components/NotesSection';
 import AttachmentsSection from '@/components/AttachmentsSection';
 import ActivityTimeline from '@/components/ActivityTimeline';
-import EmailSection from '@/components/EmailSection';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EmailIcon from '@mui/icons-material/Email';
@@ -522,11 +521,6 @@ export default function ContactDetailPage() {
                 )}
               </CardContent>
             </Card>
-          </Grid>
-
-          {/* Email Section */}
-          <Grid size={{ xs: 12 }}>
-            <EmailSection contactId={id} defaultToAddress={contact.email} />
           </Grid>
 
           {/* Notes Section */}

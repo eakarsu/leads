@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { ensureDefaultOpportunityContactRoles } from '@/lib/defaultFeatureSeeds';
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,7 +19,6 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
-    await ensureDefaultOpportunityContactRoles(session.user.id, opportunityId);
 
     const roles = await prisma.opportunityContactRole.findMany({
       where: { opportunityId },

@@ -4,39 +4,47 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && bash scripts/prepare-standalone.sh",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint app/api/lead-operations app/api/leads/route.ts app/api/leads/\\[id\\]/route.ts app/api/leads/\\[id\\]/transition app/api/leads/\\[id\\]/consent app/api/leads/\\[id\\]/handoff app/api/leads/\\[id\\]/conversion app/leads app/outreach app/settings app/dashboard app/login app/opt-out components/DashboardLayout.tsx lib/lead-operations lib/auth.ts lib/email.ts middleware.ts scripts/lead-worker.ts scripts/provision-admin.ts scripts/revoke-user-sessions.ts tests/lead-operations",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "test": "tsx --test tests/lead-operations/*.test.ts",
+    "test:e2e": "playwright test tests/e2e",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:provision": "tsx scripts/provision-admin.ts",
+    "create-admin": "tsx scripts/provision-admin.ts",
+    "db:backup": "bash scripts/backup.sh",
+    "db:restore": "bash scripts/restore.sh",
+    "db:studio": "prisma studio",
+    "auth:revoke": "tsx scripts/revoke-user-sessions.ts",
+    "worker": "tsx scripts/lead-worker.ts",
+    "worker:once": "tsx scripts/lead-worker.ts --once",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs && node scripts/audit-dependencies.mjs --all"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.1",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.5",
     "@mui/material": "^7.3.5",
     "@mui/material-nextjs": "^7.3.5",
     "@mui/x-date-pickers": "^7.28.0",
-    "@prisma/adapter-pg": "^7.0.0",
-    "@prisma/client": "^7.0.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^3.0.3",
     "date-fns": "^3.6.0",
-    "dotenv": "^17.2.3",
-    "next": "16.0.3",
-    "next-auth": "^4.24.13",
+    "next": "^16.2.10",
+    "next-auth": "^4.24.14",
     "pg": "^8.16.3",
-    "prisma": "^7.0.0",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "prisma": "^7.8.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "reactflow": "^11.11.4",
     "recharts": "^3.7.0",
-    "resend": "^6.5.2",
+    "resend": "^6.17.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -47,9 +55,15 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.0.3",
+    "eslint-config-next": "^16.2.10",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@hono/node-server": "1.19.13",
+    "next-auth": {
+      "uuid": "11.1.1"
+    }
   }
 }

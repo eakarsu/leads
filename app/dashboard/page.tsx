@@ -1,468 +1,60 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  Box,
-  Grid,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Alert,
-  Chip,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemButton,
-  Divider,
-} from '@mui/material';
+import { useSession } from 'next-auth/react';
+import { Alert, Box, Card, CardContent, CircularProgress, Grid, Typography } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
-import NextBestActions from '@/components/NextBestActions';
-import CardSkeleton from '@/components/CardSkeleton';
-import TableSkeleton from '@/components/TableSkeleton';
-import BusinessIcon from '@mui/icons-material/Business';
-import CampaignIcon from '@mui/icons-material/Campaign';
-import PeopleIcon from '@mui/icons-material/People';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import SupportAgentIcon from '@mui/icons-material/SupportAgent';
-import DescriptionIcon from '@mui/icons-material/Description';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 
-interface Stats {
-  totalClients: number;
-  totalCampaigns: number;
-  activeCampaigns: number;
-  totalLeads: number;
-  qualifiedLeads: number;
-  wonLeads: number;
-  openCases: number;
-  activeContracts: number;
-  pendingTasks: number;
-  totalOpportunities: number;
-  leadsByStatus: Record<string, number>;
-  recentActivities: any[];
-  topCampaigns: any[];
-}
+type Metrics = {
+  totalLeads: number; converted: number; suppressed: number; reviewPending: number;
+  outreachFailures: number; syncFailures: number; conversionRate: number;
+  averageCompleteness: number; attributedConversions: number;
+};
 
-interface AIInsights {
-  keyInsights: string[];
-  optimizationOpportunities: Array<{
-    recommendation: string;
-    expectedImpact: string;
-    priority: string;
-  }>;
-  benchmarkComparison: string;
-  summary: string;
-}
+const cards: Array<{ key: keyof Metrics; label: string; suffix?: string }> = [
+  { key: 'totalLeads', label: 'Governed leads' },
+  { key: 'conversionRate', label: 'Conversion rate', suffix: '%' },
+  { key: 'averageCompleteness', label: 'Average data completeness', suffix: '%' },
+  { key: 'reviewPending', label: 'Awaiting human review' },
+  { key: 'suppressed', label: 'Suppressed leads' },
+  { key: 'attributedConversions', label: 'Attributed conversions' },
+  { key: 'outreachFailures', label: 'Outreach dead letters' },
+  { key: 'syncFailures', label: 'Sync dead letters' },
+];
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [aiInsights, setAiInsights] = useState<AIInsights | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingAI, setLoadingAI] = useState(false);
+  const { data: session, status } = useSession();
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [error, setError] = useState('');
-
   useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    try {
-      const response = await fetch('/api/dashboard/stats');
-      if (!response.ok) throw new Error('Failed to fetch stats');
-      const data = await response.json();
-      setStats(data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateAIInsights = async () => {
-    if (!stats) return;
-
-    setLoadingAI(true);
-    setError('');
-
-    try {
-      const funnelMetrics = {
-        totalLeads: stats.totalLeads,
-        qualifiedLeads: stats.qualifiedLeads,
-        wonLeads: stats.wonLeads,
-        activeCampaigns: stats.activeCampaigns,
-        leadsByStatus: stats.leadsByStatus,
-      };
-
-      const response = await fetch('/api/ai/kpi-insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ funnelMetrics }),
-      });
-
-      if (!response.ok) throw new Error('Failed to generate AI insights');
-      const data = await response.json();
-      setAiInsights(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate AI insights');
-    } finally {
-      setLoadingAI(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <Box>
-          <Typography variant="h4" gutterBottom>Dashboard</Typography>
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-              <Grid key={i} size={{ xs: 12, sm: 6, md: 3 }}>
-                <CardSkeleton />
-              </Grid>
-            ))}
-          </Grid>
-          <Card sx={{ mb: 4 }}>
-            <CardContent>
-              <TableSkeleton rows={3} columns={3} />
-            </CardContent>
-          </Card>
-        </Box>
-      </DashboardLayout>
-    );
-  }
-
-  if (!stats) {
-    return (
-      <DashboardLayout>
-        <Alert severity="error">Failed to load dashboard data</Alert>
-      </DashboardLayout>
-    );
-  }
-
+    if (status !== 'authenticated') return;
+    const clientId = session.user.clientId;
+    const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : '';
+    fetch(`/api/lead-operations/metrics${query}`)
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.message || 'Metrics could not be loaded');
+        setMetrics(body);
+      })
+      .catch((reason) => setError(reason.message));
+  }, [session, status]);
   return (
     <DashboardLayout>
-      <Box>
-        <Typography variant="h4" gutterBottom>
-          Dashboard
-        </Typography>
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-            {error}
-          </Alert>
-        )}
-
-        {/* Stats Cards */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/clients')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <BusinessIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Total Clients</Typography>
-                </Box>
-                <Typography variant="h4">{stats.totalClients}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/campaigns')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <CampaignIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Active Campaigns</Typography>
-                </Box>
-                <Typography variant="h4">{stats.activeCampaigns}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  of {stats.totalCampaigns} total
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/leads')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <PeopleIcon color="primary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Total Leads</Typography>
-                </Box>
-                <Typography variant="h4">{stats.totalLeads}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {stats.qualifiedLeads} qualified
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/leads?status=WON')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <CheckCircleIcon color="success" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Deals Won</Typography>
-                </Box>
-                <Typography variant="h4">{stats.wonLeads}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {stats.totalLeads > 0
-                    ? ((stats.wonLeads / stats.totalLeads) * 100).toFixed(1)
-                    : 0}% conversion
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/cases')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <SupportAgentIcon color="warning" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Open Cases</Typography>
-                </Box>
-                <Typography variant="h4">{stats.openCases}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/contracts')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <DescriptionIcon color="info" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Active Contracts</Typography>
-                </Box>
-                <Typography variant="h4">{stats.activeContracts}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/tasks')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <AssignmentIcon color="error" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Pending Tasks</Typography>
-                </Box>
-                <Typography variant="h4">{stats.pendingTasks}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card
-              sx={{
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                '&:hover': { transform: 'translateY(-4px)', boxShadow: 4 },
-              }}
-              onClick={() => router.push('/opportunities')}
-            >
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={1}>
-                  <TrendingUpIcon color="secondary" sx={{ mr: 1 }} />
-                  <Typography color="text.secondary" variant="body2">Pipeline</Typography>
-                </Box>
-                <Typography variant="h4">{stats.totalOpportunities}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  open opportunities
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
+      <Typography variant="h4" fontWeight={700} gutterBottom>Operations dashboard</Typography>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>Deterministic conversion and data-quality evidence from the governed workflow.</Typography>
+      {error ? <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert> : null}
+      {!metrics ? <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress /></Box> : (
+        <Grid container spacing={2}>
+          {cards.map((card) => (
+            <Grid key={card.key} size={{ xs: 12, sm: 6, lg: 3 }}>
+              <Card variant="outlined"><CardContent>
+                <Typography color="text.secondary" variant="body2">{card.label}</Typography>
+                <Typography variant="h3" sx={{ mt: 1 }}>{metrics[card.key]}{card.suffix}</Typography>
+              </CardContent></Card>
+            </Grid>
+          ))}
         </Grid>
-
-        {/* Einstein Next Best Actions */}
-        <Box sx={{ mb: 4 }}>
-          <NextBestActions autoLoad={true} />
-        </Box>
-
-        {/* AI Insights Section */}
-        <Card sx={{ mb: 4 }}>
-          <CardContent>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-              <Box display="flex" alignItems="center">
-                <AutoAwesomeIcon color="secondary" sx={{ mr: 1 }} />
-                <Typography variant="h6">AI Insights & Recommendations</Typography>
-              </Box>
-              <Button
-                variant="contained"
-                color="secondary"
-                startIcon={<AutoAwesomeIcon />}
-                onClick={generateAIInsights}
-                disabled={loadingAI}
-              >
-                {loadingAI ? 'Generating...' : 'Generate AI Insights'}
-              </Button>
-            </Box>
-
-            {loadingAI && <TableSkeleton rows={3} columns={2} />}
-
-            {aiInsights && !loadingAI && (
-              <Box>
-                <Typography variant="body1" paragraph sx={{ fontStyle: 'italic' }}>
-                  {aiInsights.summary}
-                </Typography>
-
-                <Typography variant="subtitle1" gutterBottom sx={{ mt: 3 }}>
-                  Key Insights:
-                </Typography>
-                <List>
-                  {aiInsights.keyInsights.map((insight, index) => (
-                    <ListItem key={index}>
-                      <ListItemText primary={`\u2022 ${insight}`} />
-                    </ListItem>
-                  ))}
-                </List>
-
-                <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
-                  Optimization Opportunities:
-                </Typography>
-                <List>
-                  {aiInsights.optimizationOpportunities.map((opp, index) => (
-                    <ListItem key={index}>
-                      <ListItemText
-                        primary={
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Chip
-                              label={opp.priority}
-                              size="small"
-                              color={
-                                opp.priority === 'High' ? 'error' : opp.priority === 'Medium' ? 'warning' : 'default'
-                              }
-                            />
-                            <span>{opp.recommendation}</span>
-                          </Box>
-                        }
-                        secondary={`Expected Impact: ${opp.expectedImpact}`}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  <strong>Benchmark:</strong> {aiInsights.benchmarkComparison}
-                </Alert>
-              </Box>
-            )}
-
-            {!aiInsights && !loadingAI && (
-              <Alert severity="info">
-                Click &quot;Generate AI Insights&quot; to get personalized recommendations based on your
-                current performance metrics.
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Activities and Top Campaigns */}
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Top Campaigns
-                </Typography>
-                <List>
-                  {stats.topCampaigns.map((campaign, index) => (
-                    <div key={campaign.id}>
-                      <ListItemButton onClick={() => router.push(`/campaigns/${campaign.id}`)}>
-                        <ListItemText
-                          primary={campaign.name}
-                          secondary={`${campaign.client.name} \u2022 ${campaign._count.leads} leads`}
-                        />
-                        <Chip
-                          label={campaign.status}
-                          size="small"
-                          color={campaign.status === 'ACTIVE' ? 'success' : 'default'}
-                        />
-                      </ListItemButton>
-                      {index < stats.topCampaigns.length - 1 && <Divider />}
-                    </div>
-                  ))}
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Recent Activities
-                </Typography>
-                <List>
-                  {stats.recentActivities.slice(0, 5).map((activity, index) => (
-                    <div key={activity.id}>
-                      <ListItemButton onClick={() => router.push(`/leads/${activity.lead?.id || ''}`)}>
-                        <ListItemText
-                          primary={`${activity.type}: ${activity.lead?.fullName || 'Unknown'} (${activity.lead?.company || ''})`}
-                          secondary={`By ${activity.user?.name || 'System'} \u2022 ${new Date(activity.timestamp).toLocaleDateString()}`}
-                        />
-                      </ListItemButton>
-                      {index < 4 && <Divider />}
-                    </div>
-                  ))}
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Box>
+      )}
     </DashboardLayout>
   );
 }

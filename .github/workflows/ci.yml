@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: leads_ci_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d leads_ci_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/leads_ci_test
+      NEXTAUTH_URL: http://127.0.0.1:3000
+      PUBLIC_APP_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Generate ephemeral validation secrets
+        run: |
+          echo "NEXTAUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "OUTREACH_OPT_OUT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Apply migrations to a fresh database
+        run: npm run db:migrate:deploy
+      - name: Prove migration replay is a no-op
+        run: npm run db:migrate:deploy
+      - name: Prove migrations and Prisma schema are equivalent
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - run: npm test
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Enforce the reviewed dependency advisory policy
+        run: npm run audit:dependencies
+      - name: Build production image
+        run: docker build --build-arg DATABASE_URL="$DATABASE_URL" .
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2

@@ -2,7 +2,7 @@ import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { prisma } from './prisma';
-import { UserRole } from '@prisma/client';
+import { UserRole, UserStatus } from '@prisma/client';
 
 export interface SessionUser {
   id: string;
@@ -11,6 +11,8 @@ export interface SessionUser {
   role: UserRole;
   clientId?: string;
   businessSector?: string;
+  authVersion: number;
+  status: UserStatus;
 }
 
 export const authOptions: NextAuthOptions = {
@@ -27,7 +29,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials.email.trim().toLowerCase() },
           include: {
             client: {
               select: {
@@ -37,7 +39,7 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        if (!user) {
+        if (!user || user.status !== 'ACTIVE') {
           throw new Error('Invalid email or password');
         }
 
@@ -55,8 +57,10 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
-          clientId: (user as any).clientId,
-          businessSector: (user as any).client?.businessSector,
+          clientId: user.clientId || undefined,
+          businessSector: user.client?.businessSector,
+          authVersion: user.authVersion,
+          status: user.status,
         };
       },
     }),
@@ -65,18 +69,38 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role;
-        token.clientId = (user as any).clientId;
-        token.businessSector = (user as any).businessSector;
+        token.role = user.role;
+        token.clientId = user.clientId;
+        token.businessSector = user.businessSector;
+        token.authVersion = user.authVersion;
+        token.status = user.status;
+      }
+      if (token.id) {
+        const current = await prisma.user.findUnique({
+          where: { id: token.id },
+          select: { role: true, clientId: true, authVersion: true, status: true },
+        });
+        token.invalid = !current
+          || current.status !== 'ACTIVE'
+          || (typeof token.authVersion === 'number' && current.authVersion !== token.authVersion);
+        if (current && !token.invalid) {
+          token.role = current.role;
+          token.clientId = current.clientId || undefined;
+          token.authVersion = current.authVersion;
+          token.status = current.status;
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as SessionUser).id = token.id as string;
-        (session.user as SessionUser).role = token.role as UserRole;
-        (session.user as SessionUser).clientId = token.clientId as string;
-        (session.user as SessionUser).businessSector = token.businessSector as string;
+        session.user.id = token.id as string;
+        session.user.role = token.role as UserRole;
+        session.user.clientId = token.clientId;
+        session.user.businessSector = token.businessSector;
+        session.user.authVersion = token.authVersion as number;
+        session.user.status = token.status as UserStatus;
+        session.user.invalid = token.invalid;
       }
       return session;
     },

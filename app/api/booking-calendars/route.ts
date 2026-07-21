@@ -3,7 +3,6 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
-import { ensureDefaultBookingData } from '@/lib/defaultFeatureSeeds';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,7 +12,6 @@ export async function GET(req: NextRequest) {
     }
 
     const paginationParams = parsePaginationParams(req);
-    await ensureDefaultBookingData(session.user.id);
 
     const { searchParams } = new URL(req.url);
     const ownerId = searchParams.get('ownerId');

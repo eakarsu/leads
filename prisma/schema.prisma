@@ -2,8 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -15,6 +14,12 @@ enum UserRole {
   ACCOUNT_MANAGER
   CAMPAIGN_SPECIALIST
   CLIENT
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
 }
 
 enum CampaignStatus {
@@ -103,16 +108,18 @@ enum EmailStatus {
 }
 
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
+  id              String     @id @default(uuid())
+  email           String     @unique
   hashedPassword  String
   name            String
-  role            UserRole  @default(CLIENT)
+  role            UserRole   @default(CLIENT)
   clientId        String?
-  emailVerified   Boolean   @default(false)
+  emailVerified   Boolean    @default(false)
   emailVerifiedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          UserStatus @default(ACTIVE)
+  authVersion     Int        @default(1)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   // Relations
   client                  ClientCompany?           @relation(fields: [clientId], references: [id])
@@ -133,9 +140,25 @@ model User {
   createdProcessFlows     ProcessFlow[]            @relation("CreatedProcessFlows")
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  governedLeads           LeadGovernance[]         @relation("GovernedLeadOwner")
+  serviceConnectors       LeadConnector[]          @relation("ConnectorServiceUser")
+  createdOutreach         GovernedOutreach[]       @relation("OutreachCreator")
+  approvedOutreach        GovernedOutreach[]       @relation("OutreachApprover")
+  handoffsFrom            LeadHandoff[]            @relation("HandoffFromOwner")
+  handoffsTo              LeadHandoff[]            @relation("HandoffToOwner")
+  requestedHandoffs       LeadHandoff[]            @relation("HandoffRequester")
+  decidedHandoffs         LeadHandoff[]            @relation("HandoffDecider")
 
   @@index([clientId])
   @@map("users")
+}
+
+enum AccountLifecycleStage {
+  PROSPECT
+  ACTIVE_CUSTOMER
+  PARTNER
+  SUSPENDED
+  ARCHIVED
 }
 
 model PasswordResetToken {
@@ -169,20 +192,24 @@ model EmailVerificationToken {
 }
 
 model ClientCompany {
-  id             String         @id @default(uuid())
-  name           String
-  industry       String
-  businessSector BusinessSector @default(GENERAL)
-  website        String?
-  contactName    String
-  contactEmail   String
-  contactPhone   String?
-  notes          String?        @db.Text
-  isPartner      Boolean        @default(false)
-  partnerLevel   String? // BRONZE, SILVER, GOLD, PLATINUM
-  type           String? // Customer, Partner, Prospect
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                 String                @id @default(uuid())
+  name               String
+  industry           String
+  businessSector     BusinessSector        @default(GENERAL)
+  website            String?
+  contactName        String
+  contactEmail       String
+  contactPhone       String?
+  notes              String?               @db.Text
+  isPartner          Boolean               @default(false)
+  partnerLevel       String? // BRONZE, SILVER, GOLD, PLATINUM
+  type               String? // Customer, Partner, Prospect
+  lifecycleStage     AccountLifecycleStage @default(PROSPECT)
+  defaultRegion      String                @default("US")
+  maxOutreachPerHour Int                   @default(50)
+  maxOutreachPerDay  Int                   @default(250)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   // Relations
   users            User[]
@@ -196,6 +223,11 @@ model ClientCompany {
   products         Product[]
   serviceContracts ServiceContract[] @relation("ServiceContracts")
   workOrders       WorkOrder[]
+  leadGovernance   LeadGovernance[]
+  leadConnectors   LeadConnector[]
+  leadSuppressions LeadSuppression[]
+  leadHandoffs     LeadHandoff[]
+  outreachPolicies OutreachPolicy[]
 
   @@map("client_companies")
 }
@@ -257,12 +289,18 @@ model Lead {
   updatedAt          DateTime   @updatedAt
 
   // Relations
-  campaign             Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  client               ClientCompany    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  submitter            User?            @relation(fields: [submittedBy], references: [id])
+  campaign             Campaign?                   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  client               ClientCompany               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  submitter            User?                       @relation(fields: [submittedBy], references: [id])
   activities           LeadActivity[]
   enrichmentData       EnrichmentData[]
   convertedOpportunity Opportunity?
+  governance           LeadGovernance?
+  consents             LeadConsent[]
+  outreach             GovernedOutreach[]
+  syncRecords          LeadSyncRecord[]
+  attributions         LeadConversionAttribution[]
+  handoffs             LeadHandoff[]
 
   @@index([campaignId])
   @@index([clientId])
@@ -270,6 +308,335 @@ model Lead {
   @@index([qualificationScore])
   @@index([leadSource])
   @@map("leads")
+}
+
+enum GovernedLeadStage {
+  CAPTURED
+  DEDUPED
+  ENRICHED
+  REVIEW_PENDING
+  OUTREACH_APPROVED
+  CONTACTED
+  ENGAGED
+  QUALIFIED
+  HANDOFF_PENDING
+  HANDED_OFF
+  RETRY_PENDING
+  CONVERTED
+  DISQUALIFIED
+  SUPPRESSED
+}
+
+enum ConnectorKind {
+  CRM
+  EMAIL
+  CALENDAR
+  ENRICHMENT
+  CONSENT
+  SUPPRESSION
+}
+
+enum SyncOperationStatus {
+  PENDING
+  LEASED
+  RETRY
+  COMPLETED
+  DEAD_LETTER
+}
+
+enum ConsentState {
+  PENDING
+  GRANTED
+  DENIED
+  REVOKED
+  EXPIRED
+}
+
+enum OutreachState {
+  DRAFT
+  REVIEW_PENDING
+  APPROVED
+  BLOCKED
+  SENDING
+  SENT
+  RETRY
+  DEAD_LETTER
+  CANCELLED
+}
+
+model LeadGovernance {
+  id               String            @id @default(uuid())
+  leadId           String            @unique
+  lead             Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  clientId         String
+  client           ClientCompany     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  stage            GovernedLeadStage @default(CAPTURED)
+  ownerId          String
+  owner            User              @relation("GovernedLeadOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  version          Int               @default(1)
+  dedupeKey        String
+  region           String
+  lawfulBasis      String?
+  approvalRequired Boolean           @default(true)
+  handedOffAt      DateTime?
+  handedOffTo      String?
+  lastTransitionAt DateTime          @default(now())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([clientId, dedupeKey])
+  @@index([ownerId, stage])
+  @@map("lead_governance")
+}
+
+model LeadConnector {
+  id                  String        @id @default(uuid())
+  clientId            String
+  client              ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  serviceUserId       String
+  serviceUser         User          @relation("ConnectorServiceUser", fields: [serviceUserId], references: [id], onDelete: Restrict)
+  kind                ConnectorKind
+  provider            String
+  baseUrl             String
+  credentialRef       String
+  webhookSecretRef    String
+  enabled             Boolean       @default(true)
+  syncDirection       String        @default("BOTH")
+  cursor              String?
+  lastSucceededAt     DateTime?
+  consecutiveFailures Int           @default(0)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  records    LeadSyncRecord[]
+  operations LeadSyncOperation[]
+  handoffs   LeadHandoff[]
+
+  @@unique([clientId, kind, provider])
+  @@index([clientId, enabled])
+  @@map("lead_connectors")
+}
+
+model LeadSyncRecord {
+  id              String        @id @default(uuid())
+  connectorId     String
+  connector       LeadConnector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  leadId          String
+  lead            Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  externalId      String
+  externalVersion String
+  sourceUpdatedAt DateTime
+  payloadHash     String
+  lastInboundAt   DateTime?
+  lastOutboundAt  DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([connectorId, externalId])
+  @@index([connectorId, leadId])
+  @@index([leadId])
+  @@map("lead_sync_records")
+}
+
+model LeadSyncOperation {
+  id              String              @id @default(uuid())
+  connectorId     String
+  connector       LeadConnector       @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  direction       String
+  entityType      String
+  externalId      String
+  idempotencyKey  String              @unique
+  payload         Json
+  payloadHash     String
+  status          SyncOperationStatus @default(PENDING)
+  attempts        Int                 @default(0)
+  maxAttempts     Int                 @default(5)
+  nextAttemptAt   DateTime            @default(now())
+  leaseOwner      String?
+  leaseUntil      DateTime?
+  lastErrorCode   String?
+  providerReceipt String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([connectorId, externalId])
+  @@map("lead_sync_operations")
+}
+
+model LeadConsent {
+  id              String       @id @default(uuid())
+  leadId          String
+  lead            Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  channel         String
+  purpose         String
+  region          String
+  state           ConsentState
+  sourceSystem    String
+  sourceReference String
+  evidenceHash    String
+  effectiveAt     DateTime
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([leadId, channel, purpose, effectiveAt])
+  @@map("lead_consents")
+}
+
+model LeadSuppression {
+  id              String        @id @default(uuid())
+  clientId        String
+  client          ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  channel         String
+  normalizedHash  String
+  region          String?
+  reason          String
+  sourceSystem    String
+  sourceReference String
+  effectiveAt     DateTime
+  expiresAt       DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@unique([clientId, channel, normalizedHash])
+  @@index([normalizedHash, effectiveAt])
+  @@map("lead_suppressions")
+}
+
+model GovernedOutreach {
+  id              String        @id @default(uuid())
+  leadId          String
+  lead            Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  channel         String
+  region          String
+  purpose         String
+  subject         String?
+  body            String
+  contentHash     String
+  state           OutreachState @default(DRAFT)
+  createdBy       String
+  creator         User          @relation("OutreachCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  approvedBy      String?
+  approver        User?         @relation("OutreachApprover", fields: [approvedBy], references: [id], onDelete: Restrict)
+  approvedAt      DateTime?
+  idempotencyKey  String        @unique
+  provider        String?
+  providerReceipt String?
+  attempts        Int           @default(0)
+  maxAttempts     Int           @default(5)
+  scheduledAt     DateTime?
+  nextAttemptAt   DateTime?
+  leaseOwner      String?
+  leaseUntil      DateTime?
+  lastErrorCode   String?
+  sentAt          DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([leadId, state])
+  @@index([state, nextAttemptAt])
+  @@map("governed_outreach")
+}
+
+enum LeadHandoffStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RETRY
+  DEAD_LETTER
+  COMPLETED
+  CANCELLED
+}
+
+model LeadHandoff {
+  id                String            @id @default(uuid())
+  leadId            String
+  lead              Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  clientId          String
+  client            ClientCompany     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fromOwnerId       String
+  fromOwner         User              @relation("HandoffFromOwner", fields: [fromOwnerId], references: [id], onDelete: Restrict)
+  toOwnerId         String
+  toOwner           User              @relation("HandoffToOwner", fields: [toOwnerId], references: [id], onDelete: Restrict)
+  targetConnectorId String?
+  targetConnector   LeadConnector?    @relation(fields: [targetConnectorId], references: [id], onDelete: SetNull)
+  status            LeadHandoffStatus @default(PENDING)
+  requestedBy       String
+  requester         User              @relation("HandoffRequester", fields: [requestedBy], references: [id], onDelete: Restrict)
+  decidedBy         String?
+  decider           User?             @relation("HandoffDecider", fields: [decidedBy], references: [id], onDelete: Restrict)
+  decisionReason    String?
+  attempts          Int               @default(0)
+  maxAttempts       Int               @default(5)
+  nextAttemptAt     DateTime?
+  lastErrorCode     String?
+  createdAt         DateTime          @default(now())
+  decidedAt         DateTime?
+  completedAt       DateTime?
+  updatedAt         DateTime          @updatedAt
+
+  @@index([leadId, status])
+  @@index([clientId, status, nextAttemptAt])
+  @@map("lead_handoffs")
+}
+
+model OutreachPolicy {
+  id                 String        @id @default(uuid())
+  clientId           String
+  client             ClientCompany @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  region             String
+  channel            String
+  requireConsent     Boolean       @default(true)
+  requireHumanReview Boolean       @default(true)
+  maxPerHour         Int           @default(50)
+  maxPerDay          Int           @default(250)
+  quietHoursStart    Int           @default(20)
+  quietHoursEnd      Int           @default(8)
+  timezone           String        @default("UTC")
+  enabled            Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([clientId, region, channel])
+  @@index([clientId, enabled])
+  @@map("outreach_policies")
+}
+
+model LeadConversionAttribution {
+  id            String      @id @default(uuid())
+  leadId        String
+  lead          Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  campaignId    String?
+  outreachId    String?
+  model         String
+  touchpoints   Json
+  dataQuality   Json
+  convertedAt   DateTime
+  createdAt     DateTime    @default(now())
+
+  @@unique([leadId, opportunityId, model])
+  @@index([campaignId, convertedAt])
+  @@map("lead_conversion_attribution")
+}
+
+model LeadOperationsAudit {
+  id           String   @id @default(uuid())
+  clientId     String
+  entityType   String
+  entityId     String
+  sequence     Int
+  actorId      String
+  action       String
+  payload      Json
+  previousHash String
+  eventHash    String   @unique
+  createdAt    DateTime @default(now())
+
+  @@unique([entityType, entityId, sequence])
+  @@index([clientId, createdAt])
+  @@map("lead_operations_audit")
 }
 
 model LeadActivity {
@@ -425,13 +792,14 @@ model Opportunity {
   updatedAt         DateTime         @updatedAt
 
   // Relations
-  client    ClientCompany         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  contact   Contact?              @relation(fields: [contactId], references: [id])
-  lead      Lead?                 @relation(fields: [leadId], references: [id])
-  owner     User                  @relation(fields: [ownerId], references: [id])
-  lineItems OpportunityLineItem[]
-  tasks     Task[]
-  events    Event[]
+  client                 ClientCompany               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contact                Contact?                    @relation(fields: [contactId], references: [id])
+  lead                   Lead?                       @relation(fields: [leadId], references: [id])
+  owner                  User                        @relation(fields: [ownerId], references: [id])
+  lineItems              OpportunityLineItem[]
+  tasks                  Task[]
+  events                 Event[]
+  conversionAttributions LeadConversionAttribution[]
 
   @@index([clientId])
   @@index([contactId])
@@ -3965,22 +4333,22 @@ model WebhookSubscription {
 }
 
 model WebhookDelivery {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   subscriptionId String
   eventType      String
   payload        Json
   /// HTTP status returned by the target (null if never reached)
   statusCode     Int?
   /// Raw response body from the target (truncated to 2000 chars)
-  responseBody   String?  @db.Text
+  responseBody   String?   @db.Text
   /// Whether delivery was ultimately successful
-  success        Boolean  @default(false)
+  success        Boolean   @default(false)
   /// Number of attempts made (including retries)
-  attempts       Int      @default(0)
+  attempts       Int       @default(0)
   /// Next scheduled retry (null if done)
   nextRetryAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   subscription WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 

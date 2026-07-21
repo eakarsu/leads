@@ -1,578 +1,83 @@
 'use client';
 
-import { useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Grid,
-  Alert,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  List,
-  ListItem,
-  ListItemText,
-  Divider,
-  Chip,
-  TextField,
-} from '@mui/material';
-import {
-  DataObject as DataIcon,
-  CheckCircle as SuccessIcon,
-  Warning as WarningIcon,
-  Download as DownloadIcon,
-  CloudUpload as ImportIcon,
-  Lock as LockIcon,
-  VerifiedUser as VerifiedIcon,
-} from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, Chip, Grid, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import DashboardLayout from '@/components/DashboardLayout';
-import PasswordStrengthIndicator from '@/components/PasswordStrengthIndicator';
-import { useToast } from '@/components/ToastProvider';
+
+type Connector = { id: string; kind: string; provider: string; baseUrl: string; syncDirection: string; enabled: boolean; lastSucceededAt: string | null; consecutiveFailures: number };
+type SyncOperation = { id: string; direction: string; entityType: string; externalId: string; status: string; attempts: number; lastErrorCode: string | null; connector: { provider: string; kind: string } };
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
-  const toast = useToast();
-  const [generating, setGenerating] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
-  const [showResultDialog, setShowResultDialog] = useState(false);
-  const [showImportResultDialog, setShowImportResultDialog] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [importResult, setImportResult] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // Change password state
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [changingPassword, setChangingPassword] = useState(false);
-
-  const handleChangePassword = async () => {
-    if (!currentPassword || !newPassword || !confirmNewPassword) {
-      toast.showError('All password fields are required');
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      toast.showError('New passwords do not match');
-      return;
-    }
-    if (newPassword.length < 8) {
-      toast.showError('Password must be at least 8 characters');
-      return;
-    }
-
-    setChangingPassword(true);
-    try {
-      const response = await fetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to change password');
-
-      toast.showSuccess('Password changed successfully');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmNewPassword('');
-    } catch (err: any) {
-      toast.showError(err.message);
-    } finally {
-      setChangingPassword(false);
-    }
-  };
-
-  const handleResendVerification = async () => {
-    try {
-      const response = await fetch('/api/auth/resend-verification', { method: 'POST' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      toast.showSuccess('Verification email sent! Check your inbox.');
-    } catch (err: any) {
-      toast.showError(err.message);
-    }
-  };
-
-  const handleGenerateDemoData = async () => {
-    setShowConfirmDialog(false);
-    setGenerating(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/seed/all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to generate demo data');
-      setResult(data);
-      setShowResultDialog(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate demo data');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleDownloadData = () => {
-    if (!result?.data) return;
-    const jsonString = JSON.stringify(result.data, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `demo-data-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportToDatabase = async () => {
-    if (!result?.data) return;
-    setShowImportConfirmDialog(false);
-    setShowResultDialog(false);
-    setImporting(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/seed/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: result.data }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to import demo data');
-      setImportResult(data);
-      setShowImportResultDialog(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to import demo data');
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const handleDirectImport = async () => {
-    setImporting(true);
-    setError(null);
-
-    try {
-      const generateResponse = await fetch('/api/seed/all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const generateData = await generateResponse.json();
-      if (!generateResponse.ok) throw new Error(generateData.error || 'Failed to generate demo data');
-
-      const importResponse = await fetch('/api/seed/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: generateData.data }),
-      });
-      const importData = await importResponse.json();
-      if (!importResponse.ok) throw new Error(importData.error || 'Failed to import demo data');
-
-      setImportResult(importData);
-      setShowImportResultDialog(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to import demo data');
-    } finally {
-      setImporting(false);
-    }
-  };
-
+  const { data: session, status } = useSession();
+  const clientId = session?.user?.clientId;
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [operations, setOperations] = useState<SyncOperation[]>([]);
+  const [message, setMessage] = useState<{ severity: 'success' | 'error'; text: string } | null>(null);
+  const [connector, setConnector] = useState({ kind: 'CRM', provider: '', baseUrl: '', credentialRef: '', webhookSecretRef: '', syncDirection: 'BOTH' });
+  const [policy, setPolicy] = useState({ region: 'US', channel: 'EMAIL', requireConsent: true, requireHumanReview: true, maxPerHour: 50, maxPerDay: 250, quietHoursStart: 20, quietHoursEnd: 8, timezone: 'UTC', enabled: true });
+  const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : '';
+  const load = useCallback(async () => {
+    if (status !== 'authenticated') return;
+    const [connectorResponse, syncResponse] = await Promise.all([fetch(`/api/lead-operations/connectors${query}`), fetch(`/api/lead-operations/sync${query}`)]);
+    const [connectorBody, syncBody] = await Promise.all([connectorResponse.json(), syncResponse.json()]);
+    if (connectorResponse.ok) setConnectors(connectorBody.data); else setMessage({ severity: 'error', text: connectorBody.message });
+    if (syncResponse.ok) setOperations(syncBody.data); else setMessage({ severity: 'error', text: syncBody.message });
+  }, [query, status]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [load]);
+  async function saveConnector(event: FormEvent) {
+    event.preventDefault();
+    const response = await fetch('/api/lead-operations/connectors', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...connector, clientId, serviceUserId: session?.user.id }) });
+    const body = await response.json();
+    if (!response.ok) setMessage({ severity: 'error', text: body.message }); else { setMessage({ severity: 'success', text: 'Connector saved. Secret values remain outside the database.' }); setConnector({ ...connector, provider: '', baseUrl: '', credentialRef: '', webhookSecretRef: '' }); await load(); }
+  }
+  async function savePolicy(event: FormEvent) {
+    event.preventDefault();
+    const response = await fetch('/api/lead-operations/policies', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...policy, clientId }) });
+    const body = await response.json();
+    setMessage(response.ok ? { severity: 'success', text: 'Regional outreach policy saved.' } : { severity: 'error', text: body.message });
+  }
+  async function retry(operation: SyncOperation) {
+    const reason = window.prompt('Describe the repair that makes this retry safe:');
+    if (!reason) return;
+    const response = await fetch(`/api/lead-operations/sync/${operation.id}/retry`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientId, reason }) });
+    const body = await response.json();
+    if (!response.ok) setMessage({ severity: 'error', text: body.message }); else await load();
+  }
   return (
     <DashboardLayout>
-      <Box>
-        <Typography variant="h4" gutterBottom>
-          Settings
-        </Typography>
-
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  User Information
-                </Typography>
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="body2" color="text.secondary">Name</Typography>
-                  <Typography variant="body1" gutterBottom>{session?.user?.name}</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Email</Typography>
-                  <Typography variant="body1" gutterBottom>{session?.user?.email}</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Role</Typography>
-                  <Typography variant="body1" gutterBottom>{session?.user?.role}</Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  API Configuration
-                </Typography>
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  API keys and configuration are managed in the <code>.env</code> file.
-                  <br /><br />
-                  <strong>OpenRouter API:</strong> Required for all AI features
-                  <br />
-                  <strong>Database:</strong> PostgreSQL connection configured
-                </Alert>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Security Section */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <LockIcon color="primary" />
-                  <Typography variant="h6">Change Password</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <TextField
-                    label="Current Password"
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    fullWidth
-                    size="small"
-                  />
-                  <TextField
-                    label="New Password"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    fullWidth
-                    size="small"
-                  />
-                  <PasswordStrengthIndicator password={newPassword} />
-                  <TextField
-                    label="Confirm New Password"
-                    type="password"
-                    value={confirmNewPassword}
-                    onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    fullWidth
-                    size="small"
-                    error={!!confirmNewPassword && newPassword !== confirmNewPassword}
-                    helperText={confirmNewPassword && newPassword !== confirmNewPassword ? 'Passwords do not match' : ''}
-                  />
-                  <Button
-                    variant="contained"
-                    onClick={handleChangePassword}
-                    disabled={changingPassword || !currentPassword || !newPassword || !confirmNewPassword}
-                  >
-                    {changingPassword ? 'Changing...' : 'Change Password'}
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <VerifiedIcon color="primary" />
-                  <Typography variant="h6">Email Verification</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <Typography variant="body1">Status:</Typography>
-                  <Chip
-                    label="Verified"
-                    color="success"
-                    size="small"
-                    icon={<SuccessIcon />}
-                  />
-                </Box>
-                <Typography variant="body2" color="text.secondary">
-                  Your email address has been verified. You will receive important notifications at {session?.user?.email}.
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  sx={{ mt: 2 }}
-                  onClick={handleResendVerification}
-                >
-                  Resend Verification Email
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Demo Data Section */}
-          <Grid size={{ xs: 12 }}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <DataIcon color="primary" />
-                  <Typography variant="h6">Demo Data Management</Typography>
-                </Box>
-
-                <Alert severity="info" sx={{ mb: 3 }}>
-                  <strong>Import Sample Data:</strong> Generate and import realistic demo data directly into your database.
-                  <br />
-                  <strong>Preview Only:</strong> Generate sample data without saving to database (download as JSON).
-                  <br /><br />
-                  Includes: Clients, Contacts, Leads, Opportunities, Cases, Contracts, Quotes, Orders,
-                  Invoices, Reports, Roles, Permissions, and more.
-                </Alert>
-
-                {error && (
-                  <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-                    {error}
-                  </Alert>
-                )}
-
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    size="large"
-                    startIcon={importing ? <CircularProgress size={20} color="inherit" /> : <ImportIcon />}
-                    onClick={handleDirectImport}
-                    disabled={generating || importing}
-                  >
-                    {importing ? 'Importing...' : 'Import Sample Data'}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="primary"
-                    startIcon={generating ? <CircularProgress size={20} color="inherit" /> : <DataIcon />}
-                    onClick={() => setShowConfirmDialog(true)}
-                    disabled={generating || importing}
-                  >
-                    {generating ? 'Generating...' : 'Preview Only'}
-                  </Button>
-                </Box>
-
-                <Box sx={{ mt: 3 }}>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    This will generate data for:
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-                    {[
-                      'Clients', 'Contacts', 'Leads', 'Campaigns', 'Opportunities',
-                      'Cases', 'Contracts', 'Quotes', 'Orders', 'Invoices',
-                      'Assets', 'Entitlements', 'Tasks', 'Events', 'Knowledge Articles',
-                      'Mass Email Jobs', 'Web Forms', 'Data Imports', 'Custom Objects',
-                      'Notes', 'Email Templates', 'Reports', 'Workflows'
-                    ].map((item) => (
-                      <Chip key={item} label={item} size="small" variant="outlined" />
-                    ))}
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12 }}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Application Information
-                </Typography>
-                <Grid container spacing={2} sx={{ mt: 1 }}>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">Version</Typography>
-                    <Typography variant="body1">1.0.0</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">Platform</Typography>
-                    <Typography variant="body1">LeadGenFlow AI</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">AI Provider</Typography>
-                    <Typography variant="body1">OpenRouter</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant="body2" color="text.secondary">Database</Typography>
-                    <Typography variant="body1">PostgreSQL with Prisma</Typography>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid size={{ xs: 12 }}>
-            <Alert severity="warning">
-              <strong>Note:</strong> User management and advanced settings are currently managed
-              through the database. Contact your administrator for role changes or additional
-              configuration options.
-            </Alert>
-          </Grid>
-        </Grid>
-
-        {/* Confirmation Dialog */}
-        <Dialog open={showConfirmDialog} onClose={() => setShowConfirmDialog(false)}>
-          <DialogTitle>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <DataIcon color="primary" />
-              Preview Demo Data?
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            <Typography>
-              This will generate approximately <strong>300+ sample records</strong> for preview:
-            </Typography>
-            <List dense sx={{ mt: 1 }}>
-              <ListItem><ListItemText primary="15 Client Companies (Partners & Customers)" /></ListItem>
-              <ListItem><ListItemText primary="20 Contacts (with Portal & Partner users)" /></ListItem>
-              <ListItem><ListItemText primary="20 Leads, 15 Opportunities, 15 Cases" /></ListItem>
-              <ListItem><ListItemText primary="12 each: Contracts, Quotes, Assets" /></ListItem>
-              <ListItem><ListItemText primary="10 each: Orders, Invoices, Entitlements, Products" /></ListItem>
-              <ListItem><ListItemText primary="Tasks, Events, Knowledge Articles, and more..." /></ListItem>
-            </List>
-            <Alert severity="success" sx={{ mt: 2 }}>
-              No data will be inserted into the database. This is preview only.
-            </Alert>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setShowConfirmDialog(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleGenerateDemoData} color="primary">Preview Data</Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Result Dialog */}
-        <Dialog open={showResultDialog} onClose={() => setShowResultDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <SuccessIcon color="success" />
-              Demo Data Preview Generated!
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            {result && (
-              <>
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Generated <strong>{result.totalRecords}</strong> sample records (not saved to database)
-                </Alert>
-                <Typography variant="subtitle2" gutterBottom>Records generated by type:</Typography>
-                <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
-                  <List dense>
-                    {result.created && Object.entries(result.created).map(([key, value]) => (
-                      <ListItem key={key} sx={{ py: 0.5 }}>
-                        <ListItemText
-                          primary={
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="body2">{key.replace(/([A-Z])/g, ' $1').trim()}</Typography>
-                              <Chip label={value as number} size="small" color="primary" />
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
-              </>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleDownloadData} color="primary">Download JSON</Button>
-            <Button variant="contained" startIcon={<ImportIcon />} onClick={() => setShowImportConfirmDialog(true)} color="success">Import to Database</Button>
-            <Button onClick={() => setShowResultDialog(false)}>Close</Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Import Confirmation Dialog */}
-        <Dialog open={showImportConfirmDialog} onClose={() => setShowImportConfirmDialog(false)}>
-          <DialogTitle>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <WarningIcon color="warning" />
-              Import to Database?
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            <Typography>
-              This will insert <strong>{result?.totalRecords || 0} records</strong> into your PostgreSQL database.
-            </Typography>
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              This action cannot be undone. The data will be permanently added to your database.
-            </Alert>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setShowImportConfirmDialog(false)}>Cancel</Button>
-            <Button
-              variant="contained"
-              color="success"
-              startIcon={importing ? <CircularProgress size={20} color="inherit" /> : <ImportIcon />}
-              onClick={handleImportToDatabase}
-              disabled={importing}
-            >
-              {importing ? 'Importing...' : 'Import Data'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Import Result Dialog */}
-        <Dialog open={showImportResultDialog} onClose={() => setShowImportResultDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <SuccessIcon color="success" />
-              Data Imported Successfully!
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            {importResult && (
-              <>
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  Imported <strong>{importResult.totalRecords}</strong> records into the database
-                </Alert>
-                <Typography variant="subtitle2" gutterBottom>Records imported by type:</Typography>
-                <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
-                  <List dense>
-                    {importResult.imported && Object.entries(importResult.imported).map(([key, value]) => (
-                      <ListItem key={key} sx={{ py: 0.5 }}>
-                        <ListItemText
-                          primary={
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="body2">{key.replace(/([A-Z])/g, ' $1').trim()}</Typography>
-                              <Chip label={value as number} size="small" color="success" />
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
-              </>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button variant="contained" onClick={() => { setShowImportResultDialog(false); setResult(null); }}>Done</Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Loading overlay for import */}
-        {importing && (
-          <Box
-            sx={{
-              position: 'fixed',
-              top: 0, left: 0, right: 0, bottom: 0,
-              bgcolor: 'rgba(0, 0, 0, 0.5)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              zIndex: 9999,
-            }}
-          >
-            <Card sx={{ p: 4, textAlign: 'center' }}>
-              <CircularProgress size={60} sx={{ mb: 2 }} />
-              <Typography variant="h6">Importing data to database...</Typography>
-              <Typography variant="body2" color="text.secondary">This may take a few moments</Typography>
-            </Card>
-          </Box>
-        )}
-      </Box>
+      <Typography variant="h4" fontWeight={700} gutterBottom>Sync and outreach controls</Typography>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>Connector records contain secret references only. Workers resolve the values at runtime.</Typography>
+      {message ? <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert> : null}
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, lg: 6 }}><Card variant="outlined"><CardContent component="form" onSubmit={saveConnector}>
+          <Typography variant="h6" gutterBottom>Add connector</Typography><Stack spacing={2}>
+            <TextField select label="Kind" value={connector.kind} onChange={(event) => setConnector({ ...connector, kind: event.target.value })}>{['CRM', 'EMAIL', 'CALENDAR', 'ENRICHMENT', 'CONSENT', 'SUPPRESSION'].map((kind) => <MenuItem key={kind} value={kind}>{kind}</MenuItem>)}</TextField>
+            <TextField required label="Provider" value={connector.provider} onChange={(event) => setConnector({ ...connector, provider: event.target.value })} />
+            <TextField required type="url" label="HTTPS endpoint" value={connector.baseUrl} onChange={(event) => setConnector({ ...connector, baseUrl: event.target.value })} />
+            <TextField required label="Credential environment reference" helperText="Example: CRM_BEARER_TOKEN" value={connector.credentialRef} onChange={(event) => setConnector({ ...connector, credentialRef: event.target.value.toUpperCase() })} />
+            <TextField required label="Webhook secret environment reference" helperText="Example: CRM_WEBHOOK_SECRET" value={connector.webhookSecretRef} onChange={(event) => setConnector({ ...connector, webhookSecretRef: event.target.value.toUpperCase() })} />
+            <TextField select label="Sync direction" value={connector.syncDirection} onChange={(event) => setConnector({ ...connector, syncDirection: event.target.value })}>{['INBOUND', 'OUTBOUND', 'BOTH'].map((direction) => <MenuItem key={direction} value={direction}>{direction}</MenuItem>)}</TextField>
+            <Button type="submit" variant="contained">Save connector</Button>
+          </Stack>
+        </CardContent></Card></Grid>
+        <Grid size={{ xs: 12, lg: 6 }}><Card variant="outlined"><CardContent component="form" onSubmit={savePolicy}>
+          <Typography variant="h6" gutterBottom>Regional email policy</Typography><Stack spacing={2}>
+            <TextField required label="Region" value={policy.region} onChange={(event) => setPolicy({ ...policy, region: event.target.value.toUpperCase() })} />
+            <TextField required type="number" label="Maximum per hour" value={policy.maxPerHour} onChange={(event) => setPolicy({ ...policy, maxPerHour: Number(event.target.value) })} />
+            <TextField required type="number" label="Maximum per day" value={policy.maxPerDay} onChange={(event) => setPolicy({ ...policy, maxPerDay: Number(event.target.value) })} />
+            <TextField required type="number" label="Quiet hours start (0-23)" value={policy.quietHoursStart} onChange={(event) => setPolicy({ ...policy, quietHoursStart: Number(event.target.value) })} />
+            <TextField required type="number" label="Quiet hours end (0-23)" value={policy.quietHoursEnd} onChange={(event) => setPolicy({ ...policy, quietHoursEnd: Number(event.target.value) })} />
+            <TextField required label="IANA timezone" value={policy.timezone} onChange={(event) => setPolicy({ ...policy, timezone: event.target.value })} />
+            <Typography variant="body2">Consent and separate human review are mandatory by default.</Typography><Button type="submit" variant="contained">Save policy</Button>
+          </Stack>
+        </CardContent></Card></Grid>
+      </Grid>
+      <Typography variant="h5" sx={{ mt: 4, mb: 2 }}>Connectors</Typography><Stack spacing={1}>{connectors.map((item) => <Card key={item.id} variant="outlined"><CardContent><Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography>{item.kind}/{item.provider} · {item.syncDirection}</Typography><Chip label={item.enabled ? 'ENABLED' : 'DISABLED'} /></Box><Typography variant="body2" color="text.secondary">{item.baseUrl} · failures {item.consecutiveFailures}</Typography></CardContent></Card>)}</Stack>
+      <Typography variant="h5" sx={{ mt: 4, mb: 2 }}>Recent sync operations</Typography><Stack spacing={1}>{operations.map((item) => <Card key={item.id} variant="outlined"><CardContent><Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography>{item.connector.kind}/{item.connector.provider} · {item.direction} {item.entityType} {item.externalId}</Typography><Chip label={item.status} color={item.status === 'DEAD_LETTER' ? 'error' : item.status === 'COMPLETED' ? 'success' : 'default'} /></Box><Typography variant="body2">Attempts: {item.attempts}{item.lastErrorCode ? ` · ${item.lastErrorCode}` : ''}</Typography>{item.status === 'DEAD_LETTER' ? <Button onClick={() => retry(item)}>Repair and retry</Button> : null}</CardContent></Card>)}</Stack>
     </DashboardLayout>
   );
 }

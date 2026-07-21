@@ -5,8 +5,8 @@ import ThemeRegistry from '@/components/ThemeRegistry';
 import SessionProvider from '@/components/SessionProvider';
 
 export const metadata: Metadata = {
-  title: 'LeadGenFlow AI - Lead Generation Platform',
-  description: 'AI-powered lead generation and campaign management platform',
+  title: 'Lead Operations',
+  description: 'Governed lead capture, outreach, sync, handoff, and conversion operations',
 };
 
 export default async function RootLayout({

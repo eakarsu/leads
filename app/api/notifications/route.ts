@@ -4,7 +4,6 @@ import { NotificationType, Prisma } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { parsePaginationParams, buildPrismaQuery, buildPaginatedResponse } from '@/lib/pagination';
-import { ensureDefaultNotifications } from '@/lib/defaultFeatureSeeds';
 
 function isNotificationType(value: unknown): value is NotificationType {
   return typeof value === 'string' && Object.values(NotificationType).includes(value as NotificationType);
@@ -18,7 +17,6 @@ export async function GET(req: NextRequest) {
     }
 
     const paginationParams = parsePaginationParams(req);
-    await ensureDefaultNotifications(session.user.id);
 
     const { searchParams } = new URL(req.url);
     const limit = Number(searchParams.get('limit'));
