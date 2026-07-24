@@ -13,10 +13,24 @@ async function main() {
   const name = required('PROVISION_ADMIN_NAME');
   const companyName = required('PROVISION_COMPANY_NAME');
   if (password.length < 14) throw new Error('PROVISION_ADMIN_PASSWORD must contain at least 14 characters');
-  const userCount = await prisma.user.count();
-  if (userCount !== 0) throw new Error('Provisioning refused: users already exist');
   const hashedPassword = await bcrypt.hash(password, 12);
   await prisma.$transaction(async (tx) => {
+    const existing = await tx.user.findUnique({ where: { email } });
+    if (existing) {
+      await tx.user.update({
+        where: { id: existing.id },
+        data: {
+          hashedPassword,
+          name,
+          role: 'ADMIN',
+          status: 'ACTIVE',
+          emailVerified: true,
+          emailVerifiedAt: new Date(),
+          authVersion: { increment: 1 },
+        },
+      });
+      return;
+    }
     const client = await tx.clientCompany.create({
       data: {
         name: companyName,
@@ -38,7 +52,7 @@ async function main() {
       },
     });
   });
-  console.log('Initial administrator provisioned');
+  console.log('Configured administrator is ready');
 }
 
 main().catch((error) => {
