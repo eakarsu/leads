@@ -17,15 +17,36 @@ function LoginForm() {
   async function fillDemoCredentials() {
     setError('');
     setDemoLoading(true);
+    let demoEmail = '';
+    let demoPassword = '';
     try {
       const response = await fetch('/api/auth/demo-credentials', { cache: 'no-store' });
       if (!response.ok) throw new Error('Demo credentials unavailable');
       const credentials = await response.json() as { email?: string; password?: string };
-      if (!credentials.email || !credentials.password) throw new Error('Demo credentials unavailable');
-      setEmail(credentials.email);
-      setPassword(credentials.password);
+      demoEmail = credentials.email || '';
+      demoPassword = credentials.password || '';
+      if (!demoEmail || !demoPassword) throw new Error('Demo credentials unavailable');
     } catch {
       setError('Demo credentials are unavailable.');
+      setDemoLoading(false);
+      return;
+    }
+
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setLoading(true);
+    try {
+      const result = await signIn('credentials', { email: demoEmail, password: demoPassword, redirect: false });
+      if (result?.error) {
+        setError('Invalid email or password, or the account is suspended.');
+        setLoading(false);
+        return;
+      }
+      router.replace('/dashboard');
+      router.refresh();
+    } catch {
+      setError('An error occurred. Please try again.');
+      setLoading(false);
     } finally {
       setDemoLoading(false);
     }
