@@ -34,16 +34,24 @@ export default function LeadsPage() {
   const load = useCallback(async () => {
     if (status !== 'authenticated') return;
     setLoading(true);
-    const query = new URLSearchParams();
-    if (clientId) query.set('clientId', clientId);
-    if (stage) query.set('stage', stage);
-    const response = await fetch(`/api/leads?${query}`);
-    const body = await response.json();
-    if (response.ok) { setRows(body.data); setError(''); } else setError(body.message || 'Leads could not be loaded');
-    setLoading(false);
+    try {
+      const query = new URLSearchParams();
+      if (clientId) query.set('clientId', clientId);
+      if (stage) query.set('stage', stage);
+      const response = await fetch(`/api/leads?${query}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || 'Leads could not be loaded');
+      if (!Array.isArray(body.data)) throw new Error('The leads service returned an invalid list');
+      setRows(body.data);
+      setError('');
+    } catch (cause) {
+      setRows([]);
+      setError(cause instanceof Error ? cause.message : 'Leads could not be loaded');
+    } finally {
+      setLoading(false);
+    }
   }, [clientId, stage, status]);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

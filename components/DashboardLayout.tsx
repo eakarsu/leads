@@ -17,6 +17,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 const drawerWidth = 240;
 const navigation = [
   { label: 'Operations dashboard', path: '/dashboard', icon: <DashboardIcon /> },
+  { label: 'AI Operations', path: '/dashboard/ai-operations', icon: <SyncIcon /> },
   { label: 'Governed leads', path: '/leads', icon: <PeopleIcon /> },
   { label: 'Outreach review', path: '/outreach', icon: <SendIcon /> },
   { label: 'Sync & policies', path: '/settings', icon: <SyncIcon /> },

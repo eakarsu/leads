@@ -1,5 +1,4 @@
 'use client';
-
 import { FormEvent, Suspense, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -17,36 +16,17 @@ function LoginForm() {
   async function fillDemoCredentials() {
     setError('');
     setDemoLoading(true);
-    let demoEmail = '';
-    let demoPassword = '';
     try {
       const response = await fetch('/api/auth/demo-credentials', { cache: 'no-store' });
       if (!response.ok) throw new Error('Demo credentials unavailable');
       const credentials = await response.json() as { email?: string; password?: string };
-      demoEmail = credentials.email || '';
-      demoPassword = credentials.password || '';
+      const demoEmail = credentials.email || '';
+      const demoPassword = credentials.password || '';
       if (!demoEmail || !demoPassword) throw new Error('Demo credentials unavailable');
+      setEmail(demoEmail);
+      setPassword(demoPassword);
     } catch {
       setError('Demo credentials are unavailable.');
-      setDemoLoading(false);
-      return;
-    }
-
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setLoading(true);
-    try {
-      const result = await signIn('credentials', { email: demoEmail, password: demoPassword, redirect: false });
-      if (result?.error) {
-        setError('Invalid email or password, or the account is suspended.');
-        setLoading(false);
-        return;
-      }
-      router.replace('/dashboard');
-      router.refresh();
-    } catch {
-      setError('An error occurred. Please try again.');
-      setLoading(false);
     } finally {
       setDemoLoading(false);
     }
@@ -77,12 +57,12 @@ function LoginForm() {
             <Box sx={{ textAlign: 'right', my: 1 }}><Link href="/forgot-password">Forgot password?</Link></Box>
             <button
               type="button"
-              onClick={fillDemoCredentials}
+              onClick={() => void fillDemoCredentials()}
               disabled={demoLoading || loading}
-              aria-label="Auto Fill Demo Credentials"
+              aria-label="Fill Demo Credentials"
               style={{ width: '100%', marginBottom: '12px', padding: '10px 14px', borderRadius: '8px', border: '1px solid currentColor', background: 'transparent', cursor: 'pointer' }}
             >
-              {demoLoading ? 'Loading Demo Credentials…' : 'Auto Fill Demo Credentials'}
+              {demoLoading ? 'Loading Demo Credentials…' : 'Fill Demo Credentials'}
             </button>
             <Button fullWidth type="submit" variant="contained" size="large" disabled={loading}>{loading ? 'Signing in…' : 'Sign In'}</Button>
           </Box>

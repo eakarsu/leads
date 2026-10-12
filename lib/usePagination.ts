@@ -37,7 +37,7 @@ interface UsePaginationReturn<T> {
   refresh: () => void;
 }
 
-export function usePagination<T = any>(options: UsePaginationOptions): UsePaginationReturn<T> {
+export function usePagination<T = unknown>(options: UsePaginationOptions): UsePaginationReturn<T> {
   const { url, defaultSortBy = 'createdAt', defaultSortOrder = 'desc', defaultPageSize = 25, extraParams = {} } = options;
 
   const [data, setData] = useState<T[]>([]);
@@ -75,11 +75,13 @@ export function usePagination<T = any>(options: UsePaginationOptions): UsePagina
       const json = await response.json();
 
       if (json.pagination) {
+        if (!Array.isArray(json.data)) throw new Error('The service returned an invalid list');
         setData(json.data);
         setPagination(json.pagination);
       } else {
         // Backwards compatibility: API returns plain array
-        const items = Array.isArray(json) ? json : [];
+        if (!Array.isArray(json)) throw new Error('The service returned an invalid list');
+        const items = json;
         setData(items);
         setPagination({
           page: 1,
@@ -90,8 +92,9 @@ export function usePagination<T = any>(options: UsePaginationOptions): UsePagina
           hasPrevPage: false,
         });
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setData([]);
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
     }
